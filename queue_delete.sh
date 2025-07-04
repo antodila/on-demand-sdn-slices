@@ -1,21 +1,16 @@
-#!/usr/bin/env bash
-# queue_delete.sh <slice_name> <iface>
-# This script removes all QoS rules for a given slice from a specific interface.
+#!/bin/bash
+# Deletes the HTB qdisc from a given interface.
+# This effectively removes all QoS rules applied by queue_create.sh.
 
-SLICE=$1      # Name of the slice
-IFACE=$2      # Network interface to remove QoS from
+IFACE=$2
 
 if [ -z "$IFACE" ]; then
-    echo "Error: Interface not specified."
+    echo "Error: Interface name not provided."
     exit 1
 fi
 
-echo "[QoS] Completely removing QoS rules for slice '$SLICE' from $IFACE"
+# Delete the root qdisc. This removes the entire HTB structure.
+tc qdisc del dev $IFACE root
 
-# Radical approach: remove the entire qdisc and recreate the default one
-tc qdisc del dev $IFACE root 2>/dev/null
-tc qdisc add dev $IFACE root pfifo_fast
-
-echo "[QoS] QoS rules successfully removed from $IFACE"
-
+echo "QoS rules removed from $IFACE."
 exit 0
