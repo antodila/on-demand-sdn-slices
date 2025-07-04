@@ -103,6 +103,18 @@ class SlicingController(app_manager.RyuApp):
         mod = parser.OFPFlowMod(datapath=datapath, priority=priority, match=match, instructions=inst)
         datapath.send_msg(mod)
 
+    def remove_flow(self, datapath, priority, match):
+        """Helper function to remove a flow rule from a switch."""
+        ofproto = datapath.ofproto
+        parser = datapath.ofproto_parser
+        mod = parser.OFPFlowMod(datapath=datapath,
+                                command=ofproto.OFPFC_DELETE,
+                                out_port=ofproto.OFPP_ANY,
+                                out_group=ofproto.OFPG_ANY,
+                                priority=priority,
+                                match=match)
+        datapath.send_msg(mod)
+    
     @set_ev_cls(ofp_event.EventOFPPacketIn, MAIN_DISPATCHER)
     def _packet_in_handler(self, ev):
         # This handler acts as a simple L2 learning switch for non-slice traffic.
@@ -249,46 +261,57 @@ class SlicingController(app_manager.RyuApp):
         return True, msg
 
     def install_path(self, path, flow, slice_name, pct):
-        """ Installs flow rules along a path and applies QoS. """
+        """ Installs forwarding and isolation rules for a slice path and applies QoS. """
         src_host, dst_host = flow['src'], flow['dst']
-        
-        # Get all switch datapaths once for efficiency.
         switches = get_switch(self, None)
         datapath_list = {sw.dp.id: sw.dp for sw in switches}
 
-        # --- Rules for the FORWARD path (e.g., h1 -> h5) ---
+        # --- FORWARD PATH RULES ---
         for i in range(len(path) - 1):
             hop_src, hop_dst = path[i], path[i+1]
             datapath = datapath_list.get(hop_src)
             if not datapath: continue
-            
             out_port = self.net[hop_src][hop_dst]['port']
             parser = datapath.ofproto_parser
             match = parser.OFPMatch(eth_type=0x0800, ipv4_src=IP_MAP[src_host], ipv4_dst=IP_MAP[dst_host])
             actions = [parser.OFPActionOutput(out_port)]
-            self.add_flow(datapath, 10, match, actions) # High priority for slice rules.
+            self.add_flow(datapath, 10, match, actions)
             self.logger.info("FORWARD rule on s%d: %s->%s via port %d", hop_src, src_host, dst_host, out_port)
 
-        # --- Rules for the REVERSE path (e.g., h5 -> h1) ---
-        path.reverse()
-        for i in range(len(path) - 1):
-            hop_src, hop_dst = path[i], path[i+1]
+        # --- FORWARD ISOLATION RULE (DROP) ---
+        dp_first_hop = datapath_list.get(path[0])
+        if dp_first_hop:
+            parser = dp_first_hop.ofproto_parser
+            match = parser.OFPMatch(eth_type=0x0800, ipv4_src=IP_MAP[src_host])
+            self.add_flow(dp_first_hop, 9, match, []) # Empty actions = drop
+            self.logger.info("ISOLATION rule on s%d: DROP all traffic from %s not matching slice flow.", path[0], src_host)
+
+        # --- REVERSE PATH RULES ---
+        reverse_path = list(path)
+        reverse_path.reverse()
+        for i in range(len(reverse_path) - 1):
+            hop_src, hop_dst = reverse_path[i], reverse_path[i+1]
             datapath = datapath_list.get(hop_src)
             if not datapath: continue
-
             out_port = self.net[hop_src][hop_dst]['port']
             parser = datapath.ofproto_parser
-            # Invert source and destination IPs for the reverse match.
             match = parser.OFPMatch(eth_type=0x0800, ipv4_src=IP_MAP[dst_host], ipv4_dst=IP_MAP[src_host])
             actions = [parser.OFPActionOutput(out_port)]
             self.add_flow(datapath, 10, match, actions)
             self.logger.info("REVERSE rule on s%d: %s->%s via port %d", hop_src, dst_host, src_host, out_port)
 
-        # --- Apply QoS (only on the first hop of the forward path) ---
-        first_hop_src, first_hop_dst = path[-1], path[-2] # The path was reversed.
+        # --- REVERSE ISOLATION RULE (DROP) ---
+        dp_rev_first_hop = datapath_list.get(reverse_path[0])
+        if dp_rev_first_hop:
+            parser = dp_rev_first_hop.ofproto_parser
+            match = parser.OFPMatch(eth_type=0x0800, ipv4_src=IP_MAP[dst_host])
+            self.add_flow(dp_rev_first_hop, 9, match, []) # Empty actions = drop
+            self.logger.info("ISOLATION rule on s%d: DROP all traffic from %s not matching slice flow.", reverse_path[0], dst_host)
+
+        # --- APPLY QOS ---
+        first_hop_src, first_hop_dst = path[0], path[1]
         link_data = self.net.get_edge_data(first_hop_src, first_hop_dst)
         iface = f"s{first_hop_src}-eth{link_data['port']}"
-        
         if iface not in self.active_slices[slice_name]['ifaces']:
             self.active_slices[slice_name]['ifaces'].add(iface)
             self.logger.info("Applying QoS for slice '%s' on %s", slice_name, iface)
@@ -304,19 +327,44 @@ class SlicingController(app_manager.RyuApp):
         self.logger.info("--- Deactivating slice '%s' ---", slice_name)
         
         slice_info = self.active_slices[slice_name]
-        ifaces = slice_info['ifaces']
+        spec = self.slices[slice_name]
         bw_to_release = slice_info['bw']
 
-        # --- NEW: Release the reserved bandwidth ---
+        # --- Remove all flow rules for the slice ---
+        switches = get_switch(self, None)
+        datapath_list = {sw.dp.id: sw.dp for sw in switches}
+        if datapath_list:
+            any_dp = next(iter(datapath_list.values()))
+            parser = any_dp.ofproto_parser
+            for flow in spec['flows']:
+                src_host, dst_host = flow['src'], flow['dst']
+                # Remove FORWARD and REVERSE rules (priority 10)
+                match_fwd = parser.OFPMatch(eth_type=0x0800, ipv4_src=IP_MAP[src_host], ipv4_dst=IP_MAP[dst_host])
+                match_rev = parser.OFPMatch(eth_type=0x0800, ipv4_src=IP_MAP[dst_host], ipv4_dst=IP_MAP[src_host])
+                for dp in datapath_list.values():
+                    self.remove_flow(dp, 10, match_fwd)
+                    self.remove_flow(dp, 10, match_rev)
+                
+                # Remove ISOLATION rules (priority 9)
+                src_dpid = self.get_host_location(src_host)
+                dst_dpid = self.get_host_location(dst_host)
+                if datapath_list.get(src_dpid):
+                    self.remove_flow(datapath_list[src_dpid], 9, parser.OFPMatch(eth_type=0x0800, ipv4_src=IP_MAP[src_host]))
+                if datapath_list.get(dst_dpid):
+                    self.remove_flow(datapath_list[dst_dpid], 9, parser.OFPMatch(eth_type=0x0800, ipv4_src=IP_MAP[dst_host]))
+            self.logger.info("Flow rules for slice '%s' removed.", slice_name)
+
+        # Release bandwidth
         for path in slice_info['paths']:
             for i in range(len(path) - 1):
                 u, v = path[i], path[i+1]
-                self.net.edges[u, v]['used_bw'] -= bw_to_release
-                self.logger.info(f"Link s{u}-s{v} usage: {self.net.edges[u, v]['used_bw']}/{self.net.edges[u, v]['capacity']} Mbps")
+                if self.net.has_edge(u, v):
+                    self.net.edges[u, v]['used_bw'] -= bw_to_release
+                    self.logger.info(f"Link s{u}-s{v} usage: {self.net.edges[u, v]['used_bw']}/{self.net.edges[u, v]['capacity']} Mbps")
 
         # Clean up QoS rules
         script_path = os.path.join(os.path.dirname(__file__), 'queue_delete.sh')
-        for iface in ifaces:
+        for iface in slice_info['ifaces']:
             subprocess.Popen([script_path, slice_name, iface])
         
         del self.active_slices[slice_name]
