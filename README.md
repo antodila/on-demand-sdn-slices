@@ -115,9 +115,9 @@ sudo mn -c
 
 To enhance the project and meet the requirements for a two-person group, the next steps will focus on robustness and more advanced test scenarios.
 
-1.  **Admission Control:**
-    -   **Goal:** Modify the controller to check if the bandwidth required by a new slice is available along the entire path before activating it. If the bandwidth is insufficient, the activation must fail with a clear error message.
-    -   **Test Scenario:** Activate a slice that consumes 60% of the bandwidth, then attempt to activate another slice that requires 50% on the same link. The second activation should be rejected.
+1.  **[COMPLETED] Admission Control:**
+    -   **Goal:** The controller must check if the bandwidth required by a new slice is available along the entire path before activating it. If the bandwidth is insufficient, the activation must fail with a clear error message.
+    -   **Status:** This functionality is already correctly implemented in `activate_slice` and has been verified through testing. The controller successfully rejects slices that would over-provision a link.
 
 2.  **Fault Tolerance:**
     -   **Goal:** Implement link failure handling. If a link used by an active slice goes down, the controller should attempt to recalculate an alternative path and dynamically reroute the traffic.
