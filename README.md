@@ -1,23 +1,23 @@
-# On-Demand SDN Slices with Ryu and Mininet
+# On-Demand SDN Slices with Ryu and ComNetsEmu
 
-This project implements an on-demand network slicing system using the Ryu controller and the Containernet network emulator (based on Mininet). The system allows for the dynamic activation and deactivation of network "slices," each with a guaranteed bandwidth (QoS) for specific traffic flows, without disrupting the overall network connectivity.
+This project implements an on-demand network slicing system using the Ryu controller and the ComNetsEmu network emulator. The system allows for the dynamic activation and deactivation of network "slices," each with a guaranteed bandwidth (QoS) for specific traffic flows, without disrupting the overall network connectivity.
 
 ## Project Architecture
 
--   **`slicing_controller.py`**: The core of the system. It's a Ryu application that manages the network topology, installs OpenFlow rules, and orchestrates the application of QoS policies. It exposes a REST API for slice activation/deactivation.
--   **`topology.py`**: A Python script that uses Containernet to create the virtual network topology, including hosts, switches, and links.
--   **`slices.yaml`**: A YAML configuration file where the slices are defined. For each slice, the traffic flows (source and destination) and the guaranteed bandwidth capacity are specified.
--   **`cli.py`**: A simple command-line interface to interact with the controller's REST API to activate and deactivate slices.
+-   **`slicing_controller.py`**: The core of the system. It is a Ryu application that manages the network topology, installs OpenFlow rules for packet forwarding, and orchestrates the application of QoS policies. It exposes a REST API for slice management.
+-   **`topology.py`**: A Python script that uses ComNetsEmu to create the virtual network topology, including hosts, switches, and links.
+-   **`slices.yaml`**: A YAML configuration file where the slices are defined. For each slice, the traffic flows (source and destination) and the guaranteed bandwidth percentage are specified.
+-   **`cli.py`**: A simple command-line interface to interact with the controller's REST API and manage slices.
 -   **`queue_create.sh`** & **`queue_delete.sh`**: Bash scripts invoked by the controller to apply and remove QoS rules (`tc` queues and filters) on the switch interfaces.
 -   **`requirements.txt`**: A list of the necessary Python dependencies for the project.
 
 ## Prerequisites
 
-Before you begin, ensure that the following are installed on your system (preferably an Ubuntu VM):
-1.  **Containernet**: The network emulator. Installation via `git` is recommended.
+Ensure the following components are installed on your system (preferably an Ubuntu VM):
+1.  **ComNetsEmu**: The network emulator.
 2.  **Ryu SDN Controller**: The framework for the controller.
 3.  **Python 3** and `pip`.
-4.  **Open vSwitch**: Typically installed along with Containernet.
+4.  **Open vSwitch**.
 
 ## Installation and Setup
 
@@ -45,90 +45,80 @@ Before you begin, ensure that the following are installed on your system (prefer
 The project requires three separate terminals. Ensure you have activated the virtual environment (`source env/bin/activate`) in every terminal where you will run Python scripts.
 
 **Terminal 1: Start the Ryu Controller**
-
 ```bash
 sudo -E ryu-manager ryu.topology.switches slicing_controller.py
 ```
 *   `sudo -E` is crucial to run the command with root privileges while preserving the user's environment variables, including the Python virtual environment.
 
 **Terminal 2: Start the Network Topology**
-
 ```bash
 sudo -E python3 topology.py
 ```
-*   This command will start Containernet and open its command-line interface (`mininet>`).
+*   This command will start ComNetsEmu and open its command-line interface (`mininet>`).
 
 **Terminal 3: Use the CLI to Manage Slices**
+This terminal will be used to activate and deactivate slices via the `cli.py` script.
 
-This terminal will be used to activate and deactivate slices.
+## Functional Test Scenarios
 
-## Testing Procedure
+Once the controller and topology are running, you can verify the system.
 
-Once the controller and topology are running, you can verify that the system is working correctly.
+### 1. Baseline Connectivity Test
+In the Mininet CLI (Terminal 2), verify that all hosts can communicate.
+```
+mininet> pingall
+```
+**Expected Result:** The test should succeed with `0% dropped`, confirming that the controller's learning switch functionality is working correctly.
 
-1.  **Baseline Test (No Active Slices)**
-    In the Mininet CLI (Terminal 2), test the bandwidth between two hosts.
-    ```
-    mininet> iperf h1 h5
-    ```
-    The result should show the maximum link bandwidth (e.g., ~85 Mbits/sec).
+### 2. Activate and Verify a Single Slice (QoS)
+In Terminal 3, activate the "work" slice.
+```bash
+./cli.py activate work
+```
+In Terminal 2, measure the bandwidth between the two hosts in the slice.
+```
+mininet> iperf h1 h5
+```
+**Expected Result:** The bandwidth should be limited to approximately **20 Mbits/sec**, as defined in `slices.yaml`.
 
-2.  **Activate the "work" Slice**
-    In Terminal 3, run:
-    ```bash
-    ./cli.py activate work
-    ```
-    In Terminal 2, re-run the test:
-    ```
-    mininet> iperf h1 h5
-    ```
-    The bandwidth should now be limited to approximately **20 Mbits/sec**, as defined in `slices.yaml`.
+### 3. Activate Multiple, Isolated Slices
+While the "work" slice is active, activate the "gaming" slice in Terminal 3.
+```bash
+./cli.py activate gaming
+```
+In Terminal 2, test the bandwidth for both slices.
+```
+mininet> iperf g1 gs
+mininet> iperf h1 h5
+```
+**Expected Result:** The first test (`g1 -> gs`) should show ~60 Mbits/sec, and the second (`h1 -> h5`) should still show ~20 Mbits/sec, demonstrating that the slices are isolated.
 
-3.  **Activate the "gaming" Slice (Simultaneous Test)**
-    In Terminal 3, run:
-    ```bash
-    ./cli.py activate gaming
-    ```
-    In Terminal 2, test the bandwidth for the "gaming" slice and verify that the "work" slice is still active:
-    ```
-    mininet> iperf g1 gs
-    mininet> iperf h1 h5
-    ```
-    The first test should show ~60 Mbits/sec, and the second should show ~20 Mbits/sec.
+### 4. Deactivate a Slice
+In Terminal 3, deactivate the "work" slice.
+```bash
+./cli.py deactivate work
+```
+In Terminal 2, verify that the bandwidth for the `h1 -> h5` flow has returned to maximum, while the "gaming" slice remains unaffected.
+```
+mininet> iperf h1 h5
+mininet> iperf g1 gs
+```
+**Expected Result:** The first test should now show the full link bandwidth (~85-95 Mbits/sec), while the second should remain at ~60 Mbits/sec.
 
-4.  **Deactivate a Slice**
-    In Terminal 3, deactivate the "gaming" slice:
-    ```bash
-    ./cli.py deactivate gaming
-    ```
-    In Terminal 2, verify that the bandwidth for `g1 -> gs` has returned to its maximum, while the bandwidth for `h1 -> h5` is still limited.
-    ```
-    mininet> iperf g1 gs
-    mininet> iperf h1 h5
-    ```
+### Cleanup
+To exit, type `exit` in the Mininet CLI. Then, run the cleanup command to remove any residual network configurations.
+```bash
+sudo mn -c
+```
 
-5.  **Test the "emergency" Slice**
-    In Terminal 3, run:
-    ```bash
-    ./cli.py activate emergency
-    ```
-    In Terminal 2, start the iperf server on `h3` and run the client on `ps`:
-    ```
-    mininet> h3 iperf -s &
-    mininet> ps iperf -c h3
-    ```
-    The bandwidth should be limited to approximately **20 Mbits/sec**. To verify, deactivate the slice:
-    ```bash
-    # In Terminal 3
-    ./cli.py deactivate emergency
-    ```
-    And re-run the test in Mininet to see the bandwidth return to maximum:
-    ```
-    mininet> ps iperf -c h3
-    ```
+## Next Steps and Future Development
 
-6.  **Clean Up the Environment**
-    To exit, type `exit` in the Mininet CLI. Then, run the cleanup command to remove any residual network configurations:
-    ```bash
-    sudo mn -c
-    ```
+To enhance the project and meet the requirements for a two-person group, the next steps will focus on robustness and more advanced test scenarios.
+
+1.  **Admission Control:**
+    -   **Goal:** Modify the controller to check if the bandwidth required by a new slice is available along the entire path before activating it. If the bandwidth is insufficient, the activation must fail with a clear error message.
+    -   **Test Scenario:** Activate a slice that consumes 60% of the bandwidth, then attempt to activate another slice that requires 50% on the same link. The second activation should be rejected.
+
+2.  **Fault Tolerance:**
+    -   **Goal:** Implement link failure handling. If a link used by an active slice goes down, the controller should attempt to recalculate an alternative path and dynamically reroute the traffic.
+    -   **Test Scenario:** Add a redundant link to the topology. Activate a slice, start a long-running `iperf` test, and then bring down the primary link (`link s1 s4 down`). Verify that the traffic recovers on the alternative path.
