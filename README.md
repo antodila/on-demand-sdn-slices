@@ -161,3 +161,8 @@ To exit, type `exit` in the Mininet CLI (Terminal 2). Then, run the cleanup comm
 ```bash
 sudo mn -c
 ```
+
+## Authors
+
+-   Antonio Di Lauro, Raffaele Crocco
+-   Networking, University of Trento, 2024
