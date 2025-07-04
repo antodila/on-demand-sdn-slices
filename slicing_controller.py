@@ -78,6 +78,11 @@ class SlicingController(app_manager.RyuApp):
         switches = [1, 2, 3, 4, 5]
         self.net.add_nodes_from(switches)
         self.net.add_edges_from(static_links)
+
+        # --- NEW: Initialize link capacities and used bandwidth ---
+        for u, v in self.net.edges():
+            self.net.edges[u, v]['capacity'] = 100  # Assuming 100 Mbit/s links
+            self.net.edges[u, v]['used_bw'] = 0
         
         self.logger.info("Static topology loaded: Nodes=%s, Edges=%s", self.net.nodes(), self.net.edges())
 
@@ -169,11 +174,18 @@ class SlicingController(app_manager.RyuApp):
                 if len(parts) == 3 and parts[0] == 'slice':
                     slice_name, action = parts[1], parts[2]
                     if action in ['activate', 'deactivate']:
-                        getattr(controller, f"{action}_slice")(slice_name)
-                        self.send_response(200)
+                        # --- MODIFIED: Capture the return value for feedback ---
+                        success, message = getattr(controller, f"{action}_slice")(slice_name)
+                        if success:
+                            self.send_response(200)
+                            response = {'status': 'ok', 'message': message}
+                        else:
+                            self.send_response(409) # 409 Conflict
+                            response = {'status': 'error', 'message': message}
+                        
                         self.send_header('Content-type', 'application/json')
                         self.end_headers()
-                        self.wfile.write(json.dumps({'status': 'ok'}).encode())
+                        self.wfile.write(json.dumps(response).encode())
                     else: self.send_error(400)
                 else: self.send_error(404)
         server = HTTPServer(('0.0.0.0', 8080), RequestHandler)
@@ -181,43 +193,61 @@ class SlicingController(app_manager.RyuApp):
 
     def activate_slice(self, slice_name):
         if slice_name not in self.slices:
-            self.logger.error("Slice '%s' not found.", slice_name)
-            return
+            msg = f"Slice '{slice_name}' not found."
+            self.logger.error(msg)
+            return False, msg
+        
+        if slice_name in self.active_slices:
+            msg = f"Slice '{slice_name}' is already active."
+            self.logger.warning(msg)
+            return False, msg
+
         self.logger.info("--- Activating slice '%s' ---", slice_name)
 
-        # Ensure the topology graph is populated.
-        if not self.net.edges():
-            self.logger.warning("Topology is incomplete. Forcing update...")
-            self.get_topology_data()
-            if not self.net.edges():
-                self.logger.error("Could not discover links. Check if the topology module is running.")
-                return
-
-        # Get slice specifications and install paths.
+        # Get slice specifications.
         spec = self.slices[slice_name]
-        pct = spec['capacity_pct']
-        if slice_name not in self.active_slices:
-            self.active_slices[slice_name] = {'ifaces': set()}
-
+        required_bw = spec['capacity_pct']
+        
+        all_paths = []
+        # --- NEW: First, check if bandwidth is available for ALL flows in the slice ---
         for flow in spec['flows']:
             src_host, dst_host = flow['src'], flow['dst']
             src_dpid = self.get_host_location(src_host)
             dst_dpid = self.get_host_location(dst_host)
-            if not src_dpid or not dst_dpid:
-                self.logger.warning("Host not found for flow %s->%s", src_host, dst_host)
-                continue
-
+            
             try:
-                # Calculate the shortest path between the source and destination switches.
                 path = nx.shortest_path(self.net, src_dpid, dst_dpid)
-                self.logger.info("Path for %s -> %s: %s", src_host, dst_host, path)
+                all_paths.append({'path': path, 'flow': flow})
                 
-                # Install flow rules along the entire path.
-                self.install_path(path, flow, slice_name, pct)
-
+                for i in range(len(path) - 1):
+                    u, v = path[i], path[i+1]
+                    available_bw = self.net.edges[u, v]['capacity'] - self.net.edges[u, v]['used_bw']
+                    if required_bw > available_bw:
+                        msg = f"Cannot activate slice '{slice_name}': Insufficient bandwidth on link s{u}-s{v}. Required: {required_bw}, Available: {available_bw}"
+                        self.logger.error(msg)
+                        return False, msg
             except nx.NetworkXNoPath:
-                self.logger.error("No path found between s%d and s%d. Is the topology complete?", src_dpid, dst_dpid)
-                self.logger.info("Current graph: Nodes=%s, Edges=%s", self.net.nodes(), self.net.edges())
+                msg = f"No path found for flow {src_host}->{dst_host}"
+                self.logger.error(msg)
+                return False, msg
+
+        # --- If all checks passed, reserve bandwidth and install rules ---
+        self.active_slices[slice_name] = {'ifaces': set(), 'paths': [], 'bw': required_bw}
+        for item in all_paths:
+            path = item['path']
+            self.active_slices[slice_name]['paths'].append(path) # Store the path
+            # Reserve bandwidth
+            for i in range(len(path) - 1):
+                u, v = path[i], path[i+1]
+                self.net.edges[u, v]['used_bw'] += required_bw
+                self.logger.info(f"Link s{u}-s{v} usage: {self.net.edges[u, v]['used_bw']}/{self.net.edges[u, v]['capacity']} Mbps")
+            
+            # Install flow rules
+            self.install_path(path, item['flow'], slice_name, required_bw)
+        
+        msg = f"Slice '{slice_name}' activated successfully."
+        self.logger.info(msg)
+        return True, msg
 
     def install_path(self, path, flow, slice_name, pct):
         """ Installs flow rules along a path and applies QoS. """
@@ -267,11 +297,30 @@ class SlicingController(app_manager.RyuApp):
             subprocess.Popen([script_path, slice_name, str(pct), IP_MAP[src_host], IP_MAP[dst_host], iface])
 
     def deactivate_slice(self, slice_name):
-        if slice_name not in self.active_slices: return
+        if slice_name not in self.active_slices:
+            msg = f"Slice '{slice_name}' is not active."
+            self.logger.warning(msg)
+            return False, msg
+
         self.logger.info("--- Deactivating slice '%s' ---", slice_name)
-        ifaces = self.active_slices[slice_name]['ifaces']
+        
+        slice_info = self.active_slices[slice_name]
+        ifaces = slice_info['ifaces']
+        bw_to_release = slice_info['bw']
+
+        # --- NEW: Release the reserved bandwidth ---
+        for path in slice_info['paths']:
+            for i in range(len(path) - 1):
+                u, v = path[i], path[i+1]
+                self.net.edges[u, v]['used_bw'] -= bw_to_release
+                self.logger.info(f"Link s{u}-s{v} usage: {self.net.edges[u, v]['used_bw']}/{self.net.edges[u, v]['capacity']} Mbps")
+
+        # Clean up QoS rules
         script_path = os.path.join(os.path.dirname(__file__), 'queue_delete.sh')
-        # Call the cleanup script for all interfaces affected by this slice.
         for iface in ifaces:
             subprocess.Popen([script_path, slice_name, iface])
+        
         del self.active_slices[slice_name]
+        msg = f"Slice '{slice_name}' deactivated successfully."
+        self.logger.info(msg)
+        return True, msg

@@ -5,16 +5,25 @@ gaming:
   flows:
     - {src: g1, dst: gs}
   capacity_pct: 60
+  priority: 50
 
 # Slice per il traffico Work
 work:
   flows:
-# [SOLUZIONE] Correggi l'indentazione. Il trattino deve essere allineato con 'flows'.
     - {src: h1, dst: h5}
   capacity_pct: 20
+  priority: 50
 
-# Slice per il traffico Emergency (esempio per test futuri)
+# Slice per il traffico Emergency
 emergency:
   flows:
     - {src: ps, dst: h3}
   capacity_pct: 20
+  priority: 100
+
+# Nuova slice per testare i conflitti di banda
+video:
+  flows:
+    - {src: h2, dst: gs}
+  capacity_pct: 50
+  priority: 30
