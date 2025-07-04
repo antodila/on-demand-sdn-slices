@@ -105,6 +105,19 @@ mininet> iperf g1 gs
 ```
 **Expected Result:** The first test should now show the full link bandwidth (~85-95 Mbits/sec), while the second should remain at ~60 Mbits/sec.
 
+### 5. Test Admission Control (Bandwidth Check)
+This test verifies that the controller rejects a slice if there is not enough bandwidth available on the path. The `gaming` slice (60Mbps) and `video` slice (50Mbps) both use the `s1-s4` link (100Mbps capacity).
+
+1.  In Terminal 3, activate the `gaming` slice. This should succeed.
+    ```bash
+    ./cli.py activate gaming
+    ```
+2.  Now, attempt to activate the `video` slice.
+    ```bash
+    ./cli.py activate video
+    ```
+**Expected Result:** The second command must fail. The CLI should show an error response from the controller (e.g., status 409) with a message like "Insufficient bandwidth on link s1-s4".
+
 ### Cleanup
 To exit, type `exit` in the Mininet CLI. Then, run the cleanup command to remove any residual network configurations.
 ```bash
@@ -115,10 +128,6 @@ sudo mn -c
 
 To enhance the project and meet the requirements for a two-person group, the next steps will focus on robustness and more advanced test scenarios.
 
-1.  **[COMPLETED] Admission Control:**
-    -   **Goal:** The controller must check if the bandwidth required by a new slice is available along the entire path before activating it. If the bandwidth is insufficient, the activation must fail with a clear error message.
-    -   **Status:** This functionality is already correctly implemented in `activate_slice` and has been verified through testing. The controller successfully rejects slices that would over-provision a link.
-
-2.  **Fault Tolerance:**
+1.  **Fault Tolerance:**
     -   **Goal:** Implement link failure handling. If a link used by an active slice goes down, the controller should attempt to recalculate an alternative path and dynamically reroute the traffic.
     -   **Test Scenario:** Add a redundant link to the topology. Activate a slice, start a long-running `iperf` test, and then bring down the primary link (`link s1 s4 down`). Verify that the traffic recovers on the alternative path.

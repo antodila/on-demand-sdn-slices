@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """
-On-Demand SDN Slicing Controller - FINAL AND WORKING VERSION
-Based on the correct architecture from reference projects.
+On-Demand SDN Slicing Controller - Implements a controller for managing network slices in a software-defined network (SDN) environment.
 """
 import os
 import yaml
