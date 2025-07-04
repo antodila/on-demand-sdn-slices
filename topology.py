@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Updated topology for ComNetsEmu: includes h1–h5, g1–g2, gs, ps, and switches s1–s5.
+Updated topology for ComNetsEmu: includes h1-h5, g1-g2, gs, ps, and switches s1-s5.
 """
 # Import necessary classes from the ComNetsEmu and Mininet libraries.
 from comnetsemu.cli import CLI
@@ -59,10 +59,10 @@ def main():
     net.addLink(hosts['g1'], switches['s1'], bw=100, intfName1='g1-eth0', intfName2='s1-eth5')
     net.addLink(hosts['h5'], switches['s2'], bw=100, intfName1='h5-eth0', intfName2='s2-eth4')
     net.addLink(hosts['h3'], switches['s3'], bw=100, intfName1='h3-eth0', intfName2='s3-eth2')
-    net.addLink(hosts['h4'], switches['s3'], bw=100)
-    net.addLink(hosts['g2'], switches['s3'], bw=100)
-    net.addLink(hosts['gs'], switches['s4'], bw=100)
-    net.addLink(hosts['ps'], switches['s5'], bw=100)
+    net.addLink(hosts['h4'], switches['s3'], bw=100, intfName1='h4-eth0', intfName2='s3-eth3')
+    net.addLink(hosts['g2'], switches['s3'], bw=100, intfName1='g2-eth0', intfName2='s3-eth4')
+    net.addLink(hosts['gs'], switches['s4'], bw=100, intfName1='gs-eth0', intfName2='s4-eth2')
+    net.addLink(hosts['ps'], switches['s5'], bw=100, intfName1='ps-eth0', intfName2='s5-eth2')
 
     info('*** Building and starting network\n')
     # Build the network with the defined topology.
