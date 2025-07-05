@@ -2,6 +2,7 @@
 """
 On-Demand SDN Slicing Controller - Implements a controller for managing network slices in a software-defined network (SDN) environment.
 """
+
 import os
 import yaml
 import threading
@@ -78,7 +79,7 @@ class SlicingController(app_manager.RyuApp):
         self.net.add_nodes_from(switches)
         self.net.add_edges_from(static_links)
 
-        # --- NEW: Initialize link capacities and used bandwidth ---
+        # Initialize link capacities and used bandwidth.
         for u, v in self.net.edges():
             self.net.edges[u, v]['capacity'] = 100  # Assuming 100 Mbit/s links
             self.net.edges[u, v]['used_bw'] = 0
@@ -185,7 +186,7 @@ class SlicingController(app_manager.RyuApp):
                 if len(parts) == 3 and parts[0] == 'slice':
                     slice_name, action = parts[1], parts[2]
                     if action in ['activate', 'deactivate']:
-                        # --- MODIFIED: Capture the return value for feedback ---
+                        # Capture the return value for feedback.
                         success, message = getattr(controller, f"{action}_slice")(slice_name)
                         if success:
                             self.send_response(200)
@@ -197,12 +198,15 @@ class SlicingController(app_manager.RyuApp):
                         self.send_header('Content-type', 'application/json')
                         self.end_headers()
                         self.wfile.write(json.dumps(response).encode())
-                    else: self.send_error(400)
-                else: self.send_error(404)
+                    else:
+                        self.send_error(400)
+                else:
+                    self.send_error(404)
         server = HTTPServer(('0.0.0.0', 8080), RequestHandler)
         server.serve_forever()
 
     def activate_slice(self, slice_name):
+        # Activate a slice if it is defined and not already active.
         if slice_name not in self.slices:
             msg = f"Slice '{slice_name}' not found."
             self.logger.error(msg)
@@ -220,7 +224,7 @@ class SlicingController(app_manager.RyuApp):
         required_bw = spec['capacity_pct']
         
         all_paths = []
-        # --- NEW: First, check if bandwidth is available for ALL flows in the slice ---
+        # Check if bandwidth is available for ALL flows in the slice.
         for flow in spec['flows']:
             src_host, dst_host = flow['src'], flow['dst']
             src_dpid = self.get_host_location(src_host)
@@ -242,7 +246,7 @@ class SlicingController(app_manager.RyuApp):
                 self.logger.error(msg)
                 return False, msg
 
-        # --- If all checks passed, reserve bandwidth and install rules ---
+        # If all checks passed, reserve bandwidth and install rules.
         self.active_slices[slice_name] = {'ifaces': set(), 'paths': [], 'bw': required_bw}
         for item in all_paths:
             path = item['path']
@@ -266,11 +270,12 @@ class SlicingController(app_manager.RyuApp):
         switches = get_switch(self, None)
         datapath_list = {sw.dp.id: sw.dp for sw in switches}
 
-        # --- FORWARD PATH RULES ---
+        # Install FORWARD PATH RULES for the slice.
         for i in range(len(path) - 1):
             hop_src, hop_dst = path[i], path[i+1]
             datapath = datapath_list.get(hop_src)
-            if not datapath: continue
+            if not datapath:
+                continue
             out_port = self.net[hop_src][hop_dst]['port']
             parser = datapath.ofproto_parser
             match = parser.OFPMatch(eth_type=0x0800, ipv4_src=IP_MAP[src_host], ipv4_dst=IP_MAP[dst_host])
@@ -278,7 +283,7 @@ class SlicingController(app_manager.RyuApp):
             self.add_flow(datapath, 10, match, actions)
             self.logger.info("FORWARD rule on s%d: %s->%s via port %d", hop_src, src_host, dst_host, out_port)
 
-        # --- FORWARD ISOLATION RULE (DROP) ---
+        # Install FORWARD ISOLATION RULE (DROP) at the first hop.
         dp_first_hop = datapath_list.get(path[0])
         if dp_first_hop:
             parser = dp_first_hop.ofproto_parser
@@ -286,13 +291,14 @@ class SlicingController(app_manager.RyuApp):
             self.add_flow(dp_first_hop, 9, match, []) # Empty actions = drop
             self.logger.info("ISOLATION rule on s%d: DROP all traffic from %s not matching slice flow.", path[0], src_host)
 
-        # --- REVERSE PATH RULES ---
+        # Install REVERSE PATH RULES for the slice.
         reverse_path = list(path)
         reverse_path.reverse()
         for i in range(len(reverse_path) - 1):
             hop_src, hop_dst = reverse_path[i], reverse_path[i+1]
             datapath = datapath_list.get(hop_src)
-            if not datapath: continue
+            if not datapath:
+                continue
             out_port = self.net[hop_src][hop_dst]['port']
             parser = datapath.ofproto_parser
             match = parser.OFPMatch(eth_type=0x0800, ipv4_src=IP_MAP[dst_host], ipv4_dst=IP_MAP[src_host])
@@ -300,7 +306,7 @@ class SlicingController(app_manager.RyuApp):
             self.add_flow(datapath, 10, match, actions)
             self.logger.info("REVERSE rule on s%d: %s->%s via port %d", hop_src, dst_host, src_host, out_port)
 
-        # --- REVERSE ISOLATION RULE (DROP) ---
+        # Install REVERSE ISOLATION RULE (DROP) at the reverse first hop.
         dp_rev_first_hop = datapath_list.get(reverse_path[0])
         if dp_rev_first_hop:
             parser = dp_rev_first_hop.ofproto_parser
@@ -308,7 +314,7 @@ class SlicingController(app_manager.RyuApp):
             self.add_flow(dp_rev_first_hop, 9, match, []) # Empty actions = drop
             self.logger.info("ISOLATION rule on s%d: DROP all traffic from %s not matching slice flow.", reverse_path[0], dst_host)
 
-        # --- APPLY QOS ---
+        # Apply QoS using the queue_create.sh script on the first hop interface.
         first_hop_src, first_hop_dst = path[0], path[1]
         link_data = self.net.get_edge_data(first_hop_src, first_hop_dst)
         iface = f"s{first_hop_src}-eth{link_data['port']}"
@@ -319,6 +325,7 @@ class SlicingController(app_manager.RyuApp):
             subprocess.Popen([script_path, slice_name, str(pct), IP_MAP[src_host], IP_MAP[dst_host], iface])
 
     def deactivate_slice(self, slice_name):
+        # Deactivate a slice and remove all associated rules and QoS.
         if slice_name not in self.active_slices:
             msg = f"Slice '{slice_name}' is not active."
             self.logger.warning(msg)
@@ -330,7 +337,7 @@ class SlicingController(app_manager.RyuApp):
         spec = self.slices[slice_name]
         bw_to_release = slice_info['bw']
 
-        # --- Remove all flow rules for the slice ---
+        # Remove all flow rules for the slice.
         switches = get_switch(self, None)
         datapath_list = {sw.dp.id: sw.dp for sw in switches}
         if datapath_list:
@@ -354,7 +361,7 @@ class SlicingController(app_manager.RyuApp):
                     self.remove_flow(datapath_list[dst_dpid], 9, parser.OFPMatch(eth_type=0x0800, ipv4_src=IP_MAP[dst_host]))
             self.logger.info("Flow rules for slice '%s' removed.", slice_name)
 
-        # Release bandwidth
+        # Release bandwidth for all links used by the slice.
         for path in slice_info['paths']:
             for i in range(len(path) - 1):
                 u, v = path[i], path[i+1]
@@ -362,7 +369,7 @@ class SlicingController(app_manager.RyuApp):
                     self.net.edges[u, v]['used_bw'] -= bw_to_release
                     self.logger.info(f"Link s{u}-s{v} usage: {self.net.edges[u, v]['used_bw']}/{self.net.edges[u, v]['capacity']} Mbps")
 
-        # Clean up QoS rules
+        # Clean up QoS rules using queue_delete.sh for each interface.
         script_path = os.path.join(os.path.dirname(__file__), 'queue_delete.sh')
         for iface in slice_info['ifaces']:
             subprocess.Popen([script_path, slice_name, iface])

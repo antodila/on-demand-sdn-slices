@@ -2,13 +2,13 @@
 """
 Updated topology for ComNetsEmu: includes h1-h5, g1-g2, gs, ps, and switches s1-s5.
 """
+
 # Import necessary classes from the ComNetsEmu and Mininet libraries.
 from comnetsemu.cli import CLI
 from comnetsemu.net import Containernet
 from mininet.node import OVSKernelSwitch, RemoteController
 from mininet.link import TCLink
 from mininet.log import setLogLevel, info
-
 
 def main():
     # Set the logging level to 'info' to display detailed output during script execution.
@@ -84,7 +84,6 @@ def main():
     info('*** Stopping network\n')
     # Stop the network and clean up all resources upon exiting the CLI.
     net.stop()
-
 
 # Standard Python entry point to run the main function when the script is executed.
 if __name__ == '__main__':

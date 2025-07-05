@@ -1,29 +1,31 @@
 # slices.yaml
+# This file defines the network slices for the SDN slicing controller.
+# Each slice specifies its flows, guaranteed bandwidth (as a percentage of link capacity), and priority.
 
-# Slice per il traffico Gaming
+# Slice for Gaming traffic
 gaming:
   flows:
-    - {src: g1, dst: gs}
-  capacity_pct: 60
-  priority: 50
+    - {src: g1, dst: gs}      # Flow from host g1 to host gs
+  capacity_pct: 60            # Reserve 60% of the link capacity for this slice
+  priority: 50                # Priority level for admission control
 
-# Slice per il traffico Work
+# Slice for Work traffic
 work:
   flows:
-    - {src: h1, dst: h5}
-  capacity_pct: 20
-  priority: 50
+    - {src: h1, dst: h5}      # Flow from host h1 to host h5
+  capacity_pct: 20            # Reserve 20% of the link capacity for this slice
+  priority: 50                # Priority level for admission control
 
-# Slice per il traffico Emergency
+# Slice for Emergency traffic
 emergency:
   flows:
-    - {src: ps, dst: h3}
-  capacity_pct: 20
-  priority: 100
+    - {src: ps, dst: h3}      # Flow from host ps to host h3
+  capacity_pct: 20            # Reserve 20% of the link capacity for this slice
+  priority: 100               # Higher priority for emergency traffic
 
-# Nuova slice per testare i conflitti di banda
+# New slice to test bandwidth conflicts
 video:
   flows:
-    - {src: h2, dst: gs}
-  capacity_pct: 50
-  priority: 30
+    - {src: h2, dst: gs}      # Flow from host h2 to host gs
+  capacity_pct: 50            # Reserve 50% of the link capacity for this slice
+  priority: 30                # Lower priority for this slice
