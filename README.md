@@ -156,6 +156,63 @@ This test verifies that the controller rejects a slice if there is not enough ba
     ```
     *Expected Result:* Bandwidth should still be ~60 Mbits/sec.
 
+### 5. Priority and Preemption Test
+This test verifies that a high-priority slice can preempt (i.e., automatically deactivate) lower-priority slices to free up bandwidth. We will use the `s1-s4` link.
+
+**Note:** This test requires a temporary modification to `slices.yaml`. Change the `emergency` slice flow to `{src: h1, dst: gs}` and its `capacity_pct` to `50`.
+
+1.  **Activate a low-priority slice (Terminal 3)**.
+    ```bash
+    ./cli.py activate video
+    ```
+    This should succeed, consuming 50 Mbps on `s1-s4` (Priority 30).
+
+2.  **Activate a medium-priority slice (Terminal 3)**.
+    ```bash
+    ./cli.py activate gaming
+    ```
+    This should also succeed, consuming another 60 Mbps. The link `s1-s4` is now oversubscribed (110/100 used), but we proceed for the test. *Note: In a real scenario, you might want admission control to prevent this step, but for demonstrating preemption, this setup is effective.* Let's assume the controller allows it for now, or that the `gaming` slice uses a different path if possible. For this test, let's simplify and assume the goal is to show preemption. A better test sequence is:
+    
+    1.  **Activate a medium-priority slice (Terminal 3)**.
+        ```bash
+        ./cli.py activate gaming
+        ```
+        This succeeds, consuming 60 Mbps on `s1-s4` (Priority 50).
+
+    2.  **Verify its QoS in Mininet (Terminal 2)**.
+        ```
+        mininet> gs iperf -s &
+        mininet> g1 iperf -c 10.0.0.8
+        ```
+        *Expected Result:* Bandwidth should be ~60 Mbits/sec.
+
+    3.  **Attempt to activate the high-priority slice (Terminal 3)**.
+        ```bash
+        ./cli.py activate emergency
+        ```
+        The `emergency` slice (Priority 100) needs 50 Mbps, but only 40 Mbps are free. The controller must preempt the lower-priority `gaming` slice.
+
+    4.  **Expected Controller Log (Terminal 1):** You must see logs indicating that the controller is preempting the `gaming` slice before activating the `emergency` slice.
+        ```
+        WARNING:root:Preempting slices ['gaming'] to activate 'emergency'.
+        INFO:root:--- Deactivating slice 'gaming' ---
+        ...
+        INFO:root:--- Activating slice 'emergency' ---
+        ```
+
+    5.  **Verify the high-priority slice is active (Terminal 2)**.
+        ```
+        mininet> gs iperf -s &
+        mininet> h1 iperf -c 10.0.0.8
+        ```
+        *Expected Result:* Bandwidth should be ~50 Mbits/sec, confirming the `emergency` slice is active and has its guaranteed QoS.
+
+    6.  **Verify the preempted slice is inactive (Terminal 2)**.
+        ```
+        mininet> g1 ping gs
+        ```
+        *Expected Result:* The ping must fail (`100% dropped`), because the `gaming` slice has been deactivated and its isolation rules are no longer overridden by specific forwarding rules.
+
 ### Cleanup
 To exit, type `exit` in the Mininet CLI (Terminal 2). Then, run the cleanup command in any terminal to remove residual network configurations.
 ```bash

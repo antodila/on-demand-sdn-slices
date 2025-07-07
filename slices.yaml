@@ -19,8 +19,8 @@ work:
 # Slice for Emergency traffic
 emergency:
   flows:
-    - {src: ps, dst: h3}      # Flow from host ps to host h3
-  capacity_pct: 20            # Reserve 20% of the link capacity for this slice
+    - {src: h1, dst: gs}      # TEMPORARY CHANGE FOR TESTING: Path s1 -> s4
+  capacity_pct: 50            # TEMPORARY CHANGE FOR TESTING: Increased to 50
   priority: 100               # Higher priority for emergency traffic
 
 # New slice to test bandwidth conflicts
