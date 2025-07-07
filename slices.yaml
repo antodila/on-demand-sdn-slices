@@ -5,27 +5,27 @@
 # Slice for Gaming traffic
 gaming:
   flows:
-    - {src: g1, dst: gs}      # Flow from host g1 to host gs
-  capacity_pct: 60            # Reserve 60% of the link capacity for this slice
-  priority: 50                # Priority level for admission control
+    - {src: g1, dst: gs}      # Flow from host g1 to host gs (path: s1 -> s4)
+  capacity_pct: 60            # Reserve 60% of the link capacity
+  priority: 50                # Medium priority
 
 # Slice for Work traffic
 work:
   flows:
-    - {src: h1, dst: h5}      # Flow from host h1 to host h5
-  capacity_pct: 20            # Reserve 20% of the link capacity for this slice
-  priority: 50                # Priority level for admission control
+    - {src: h1, dst: h5}      # Flow from host h1 to host h5 (path: s1 -> s2 -> s5)
+  capacity_pct: 20            # Reserve 20% of the link capacity
+  priority: 50                # Medium priority
 
 # Slice for Emergency traffic
 emergency:
   flows:
-    - {src: ps, dst: h3}      # Flow from host ps to host h3
-  capacity_pct: 20            # Reserve 20% of the link capacity for this slice
-  priority: 100               # Higher priority for emergency traffic
+    - {src: h1, dst: gs}      # Flow from host h1 to gs (path: s1 -> s4)
+  capacity_pct: 50            # Reserve 50% of the link capacity
+  priority: 100               # Highest priority
 
-# New slice to test bandwidth conflicts
+# Slice for Video traffic
 video:
   flows:
-    - {src: h2, dst: gs}      # Flow from host h2 to host gs
-  capacity_pct: 50            # Reserve 50% of the link capacity for this slice
-  priority: 30                # Lower priority for this slice
+    - {src: h2, dst: gs}      # Flow from host h2 to gs (path: s1 -> s4)
+  capacity_pct: 50            # Reserve 50% of the link capacity
+  priority: 30                # Low priority

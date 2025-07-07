@@ -202,6 +202,36 @@ class SlicingController(app_manager.RyuApp):
                         self.send_error(400)
                 else:
                     self.send_error(404)
+            def do_GET(self):
+                if self.path == '/slices/status':
+                    status_info = {
+                        'active_slices': {},
+                        'link_usage': {}
+                    }
+                    # Populate active slices info
+                    for name, info in controller.active_slices.items():
+                        spec = controller.slices.get(name, {})
+                        status_info['active_slices'][name] = {
+                            'bandwidth_mbps': info.get('bw'),
+                            'priority': spec.get('priority'),
+                            'flows': spec.get('flows')
+                        }
+                    
+                    # Populate link usage info
+                    for u, v, data in controller.net.edges(data=True):
+                        link_name = f"s{u}-s{v}"
+                        if data['used_bw'] > 0:
+                             status_info['link_usage'][link_name] = {
+                                 'used': data['used_bw'],
+                                 'capacity': data['capacity']
+                             }
+                    
+                    self.send_response(200)
+                    self.send_header('Content-type', 'application/json')
+                    self.end_headers()
+                    self.wfile.write(json.dumps(status_info, indent=2).encode())
+                else:
+                    self.send_error(404)
         server = HTTPServer(('0.0.0.0', 8080), RequestHandler)
         server.serve_forever()
 
@@ -222,9 +252,12 @@ class SlicingController(app_manager.RyuApp):
         # Get slice specifications.
         spec = self.slices[slice_name]
         required_bw = spec['capacity_pct']
+        priority = spec.get('priority', 0) # Get priority, default to 0 if not specified
         
         all_paths = []
-        # Check if bandwidth is available for ALL flows in the slice.
+        victims_to_preempt = set()
+
+        # Phase 1: Check for bandwidth and identify potential victims for preemption.
         for flow in spec['flows']:
             src_host, dst_host = flow['src'], flow['dst']
             src_dpid = self.get_host_location(src_host)
@@ -237,16 +270,50 @@ class SlicingController(app_manager.RyuApp):
                 for i in range(len(path) - 1):
                     u, v = path[i], path[i+1]
                     available_bw = self.net.edges[u, v]['capacity'] - self.net.edges[u, v]['used_bw']
+                    
                     if required_bw > available_bw:
-                        msg = f"Cannot activate slice '{slice_name}': Insufficient bandwidth on link s{u}-s{v}. Required: {required_bw}, Available: {available_bw}"
-                        self.logger.error(msg)
-                        return False, msg
+                        self.logger.info(f"Link s{u}-s{v} is a bottleneck. Checking for preemption...")
+                        # Find active slices on this link with lower priority.
+                        preemptable_slices = []
+                        for active_slice_name, slice_info in self.active_slices.items():
+                            active_slice_priority = self.slices[active_slice_name].get('priority', 0)
+                            if active_slice_priority < priority:
+                                for active_path in slice_info['paths']:
+                                    if (u, v) in zip(active_path, active_path[1:]):
+                                        preemptable_slices.append((active_slice_name, slice_info['bw'], active_slice_priority))
+                                        break # Avoid adding the same slice multiple times for one link
+                        
+                        # Sort victims by priority (lowest first) to minimize impact.
+                        preemptable_slices.sort(key=lambda x: x[2])
+                        
+                        freed_bw = 0
+                        victims_for_this_link = set()
+                        for victim_name, victim_bw, _ in preemptable_slices:
+                            if available_bw + freed_bw >= required_bw:
+                                break
+                            freed_bw += victim_bw
+                            victims_for_this_link.add(victim_name)
+                        
+                        if available_bw + freed_bw >= required_bw:
+                            self.logger.info(f"Found victims on s{u}-s{v}: {list(victims_for_this_link)}. Preemption is possible.")
+                            victims_to_preempt.update(victims_for_this_link)
+                        else:
+                            msg = f"Cannot activate slice '{slice_name}': Insufficient bandwidth on link s{u}-s{v} even after preemption. Required: {required_bw}, Available+Preemptable: {available_bw + freed_bw}"
+                            self.logger.error(msg)
+                            return False, msg
+
             except nx.NetworkXNoPath:
                 msg = f"No path found for flow {src_host}->{dst_host}"
                 self.logger.error(msg)
                 return False, msg
 
-        # If all checks passed, reserve bandwidth and install rules.
+        # Phase 2: Deactivate victim slices if any were identified.
+        if victims_to_preempt:
+            self.logger.warning(f"Preempting slices {list(victims_to_preempt)} to activate '{slice_name}'.")
+            for victim_name in list(victims_to_preempt):
+                self.deactivate_slice(victim_name)
+
+        # Phase 3: If all checks passed, reserve bandwidth and install rules.
         self.active_slices[slice_name] = {'ifaces': set(), 'paths': [], 'bw': required_bw}
         for item in all_paths:
             path = item['path']
