@@ -202,6 +202,36 @@ class SlicingController(app_manager.RyuApp):
                         self.send_error(400)
                 else:
                     self.send_error(404)
+            def do_GET(self):
+                if self.path == '/slices/status':
+                    status_info = {
+                        'active_slices': {},
+                        'link_usage': {}
+                    }
+                    # Populate active slices info
+                    for name, info in controller.active_slices.items():
+                        spec = controller.slices.get(name, {})
+                        status_info['active_slices'][name] = {
+                            'bandwidth_mbps': info.get('bw'),
+                            'priority': spec.get('priority'),
+                            'flows': spec.get('flows')
+                        }
+                    
+                    # Populate link usage info
+                    for u, v, data in controller.net.edges(data=True):
+                        link_name = f"s{u}-s{v}"
+                        if data['used_bw'] > 0:
+                             status_info['link_usage'][link_name] = {
+                                 'used': data['used_bw'],
+                                 'capacity': data['capacity']
+                             }
+                    
+                    self.send_response(200)
+                    self.send_header('Content-type', 'application/json')
+                    self.end_headers()
+                    self.wfile.write(json.dumps(status_info, indent=2).encode())
+                else:
+                    self.send_error(404)
         server = HTTPServer(('0.0.0.0', 8080), RequestHandler)
         server.serve_forever()
 

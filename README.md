@@ -1,29 +1,45 @@
-# On-Demand SDN Slices with Ryu and ComNetsEmu
+# On-Demand SDN Slices with QoS and Preemption
 
-This project implements an on-demand network slicing system using the Ryu SDN controller and the ComNetsEmu network emulator. The system allows for the dynamic activation and deactivation of network "slices." Each slice provides a guaranteed bandwidth (QoS) and strict traffic isolation for specific flows, without disrupting general network connectivity.
+This project implements a dynamic network slicing system using the Ryu SDN controller and the ComNetsEmu emulator. It allows a network operator to create, activate, and deactivate isolated network "slices" on-demand via a simple command-line interface. Each slice is defined by specific traffic flows, a guaranteed bandwidth (QoS), and a priority level, enabling sophisticated traffic management.
 
-## Project Architecture
+## Key Features
 
--   **`slicing_controller.py`**: The core of the system. A Ryu application that manages network topology, handles slice activation/deactivation via a REST API, and installs OpenFlow rules to enforce slice policies (forwarding, isolation, and QoS).
--   **`topology.py`**: A Python script that uses ComNetsEmu to build the virtual network topology, including hosts, OpenFlow switches, and links with defined bandwidth.
--   **`slices.yaml`**: A YAML configuration file that defines the available slices. Each slice specifies its traffic flows (source/destination hosts), required bandwidth, and priority.
--   **`cli.py`**: A simple command-line interface for interacting with the controller's REST API to easily activate and deactivate slices.
--   **`queue_create.sh`** & **`queue_delete.sh`**: Bash scripts invoked by the controller to apply and remove Linux Traffic Control (`tc`) queueing disciplines on switch interfaces, thereby enforcing the bandwidth limits for each slice.
--   **`requirements.txt`**: A list of the necessary Python dependencies for the project.
+-   **Dynamic Slice Management**: Activate and deactivate slices on-the-fly without network downtime using a REST API.
+-   **Guaranteed QoS**: Enforces bandwidth guarantees for each slice using Linux Traffic Control (TC).
+-   **Strict Traffic Isolation**: Slices are completely isolated from each other and from general network traffic using OpenFlow rules.
+-   **Priority-Based Preemption**: High-priority slices can automatically preempt (deactivate) lower-priority slices if network resources are scarce.
+-   **Admission Control**: The controller rejects slice activation if there is insufficient bandwidth, preventing over-commitment of resources.
+-   **Live Status Monitoring**: A CLI command provides a real-time overview of active slices and link utilization.
 
-## Prerequisites
+## System Architecture
 
-Ensure the following components are installed on your system (preferably an Ubuntu-based distribution):
+The system is composed of several interconnected components:
+
+#### Core Logic
+-   **`slicing_controller.py`**: The brain of the operation. This Ryu application manages the network topology, exposes a REST API for slice control, and dynamically installs OpenFlow rules to enforce slice policies (forwarding, isolation, QoS, and preemption).
+-   **`topology.py`**: A ComNetsEmu script that builds the virtual network, including hosts, OpenFlow switches, and links with defined bandwidth capacities.
+-   **`cli.py`**: A user-friendly command-line interface (CLI) for interacting with the controller's REST API. It simplifies the process of activating, deactivating, and monitoring slices.
+
+#### Configuration & Dependencies
+-   **`slices.yaml`**: A human-readable YAML file where all available network slices are defined. Each slice specifies its flows, required bandwidth, and priority.
+-   **`requirements.txt`**: Lists the necessary Python dependencies for the project.
+
+#### Supporting Scripts
+-   **`queue_create.sh`** & **`queue_delete.sh`**: Bash scripts invoked by the controller to manage Linux Traffic Control (TC) queueing disciplines on switch interfaces, which are essential for enforcing bandwidth limits.
+
+## Getting Started
+
+### Prerequisites
+Ensure the following are installed on your system (Ubuntu-based distribution recommended):
 1.  **ComNetsEmu**: The network emulator.
-2.  **Ryu SDN Controller**: The framework for the controller.
+2.  **Ryu SDN Controller**: The SDN controller framework.
 3.  **Python 3** and `pip`.
 4.  **Open vSwitch**.
 
-## Installation and Setup
+### Installation
+1.  **Clone the repository** or place all project files in the same directory.
 
-1.  **Clone the repository** or ensure all project files are in the same directory.
-
-2.  **Create and activate a Python virtual environment**:
+2.  **Set up a Python virtual environment** (recommended):
     ```bash
     python3 -m venv env
     source env/bin/activate
@@ -36,185 +52,147 @@ Ensure the following components are installed on your system (preferably an Ubun
 
 4.  **Make the QoS scripts executable**:
     ```bash
-    chmod +x queue_create.sh
-    chmod +x queue_delete.sh
+    chmod +x queue_create.sh queue_delete.sh
     ```
 
-## Running the Project
+## Execution
 
-The project requires three separate terminals. Ensure you have activated the virtual environment (`source env/bin/activate`) in every terminal where you will run Python scripts.
+The project requires three separate terminals. **Ensure the virtual environment is activated in each terminal** (`source env/bin/activate`).
 
 **Terminal 1: Start the Ryu Controller**
+Run the controller with `sudo -E` to grant root privileges while preserving the Python environment.
 ```bash
 sudo -E ryu-manager ryu.topology.switches slicing_controller.py
 ```
-*   `sudo -E` is crucial to run with root privileges while preserving the user's environment variables, including the Python virtual environment.
 
 **Terminal 2: Start the Network Topology**
+This command starts ComNetsEmu and opens its interactive CLI (`mininet>`).
 ```bash
 sudo -E python3 topology.py
 ```
-*   This command will start ComNetsEmu and open its command-line interface (`mininet>`).
 
-**Terminal 3: Use the CLI to Manage Slices**
-This terminal will be used to activate and deactivate slices via the `cli.py` script.
-
-## Functional Test Scenarios
-
-Once the controller and topology are running, perform these tests to verify all system functionalities.
-
-### 1. Baseline Connectivity Test
-First, confirm that the controller provides basic L2 connectivity for all hosts when no slices are active.
-In the Mininet CLI (Terminal 2):
+**Terminal 3: Manage Slices via CLI**
+Use this terminal to send commands to the controller.
+```bash
+./cli.py <action> [slice_name]
 ```
-mininet> pingall
-```
-**Expected Result:** The test must succeed with `0% dropped`, confirming the controller's default forwarding is working.
 
-### 2. Slice Activation: Connectivity, Isolation, and QoS
-This multi-part test verifies that activating a slice correctly establishes a private, bandwidth-guaranteed tunnel. We will use the "gaming" slice (`g1` <-> `gs`, 60% bandwidth).
+---
 
-1.  **Activate the Slice**
-    In Terminal 3, run:
+## Verification Scenarios
+
+Once the controller and topology are running, perform these tests in the recommended order to verify all system functionalities. Each scenario builds upon a clean state unless specified otherwise.
+
+### Scenario 1: Baseline L2 Connectivity
+**Goal:** Confirm that the controller provides basic network-wide connectivity when no slices are active.
+
+1.  **In the Mininet CLI (Terminal 2), run `pingall`:**
+    ```
+    mininet> pingall
+    ```
+2.  **Expected Outcome:** The test must succeed with `0% dropped`, showing that the controller's default L2 learning switch functionality is working.
+
+---
+### Scenarios 2 & 3: Slice Lifecycle (Activation and Deactivation)
+**Goal:** Verify the complete lifecycle of a slice, from activation and isolation to deactivation and resource release. These two scenarios should be performed sequentially.
+
+#### Part 1: Activation, Isolation, and QoS
+1.  **Activate the `gaming` slice (Terminal 3):**
     ```bash
     ./cli.py activate gaming
     ```
-    *Expected Controller Log (Terminal 1):* You should see logs indicating FORWARD, REVERSE, and ISOLATION rules being installed, along with QoS being applied.
-
-2.  **Verify Connectivity (Inside the Slice)**
-    In Terminal 2, ping the destination host of the slice:
+2.  **Verify Connectivity (Terminal 2):** Ping between the hosts inside the slice.
     ```
     mininet> g1 ping gs
     ```
-    **Expected Result:** The ping must succeed (`0% dropped`), confirming the forwarding rules are correct.
+    *Expected Outcome:* The ping must succeed (`0% dropped`).
 
-3.  **Verify Isolation**
-    In Terminal 2, attempt to ping a host outside the slice:
+3.  **Verify Isolation (Terminal 2):** Attempt to ping a host outside the slice.
     ```
     mininet> g1 ping h1
     ```
-    **Expected Result:** The ping must fail (`100% dropped`), confirming the isolation rules are working.
+    *Expected Outcome:* The ping must fail (`100% dropped`).
 
-4.  **Verify QoS (Bandwidth Guarantee)**
-    In Terminal 2, run an `iperf` test. **First start the server on the destination**, then run the client:
+4.  **Verify QoS (Terminal 2):** Run an `iperf` test to measure the bandwidth.
     ```
     mininet> gs iperf -s &
     mininet> g1 iperf -c 10.0.0.8
     ```
-    **Expected Result:** The bandwidth reported by `iperf` should be approximately **60 Mbits/sec**.
+    *Expected Outcome:* Bandwidth should be approximately **60 Mbits/sec**.
 
-### 3. Slice Deactivation and Resource Release
-This test verifies that deactivating a slice correctly removes all its rules and frees up network resources.
-
-1.  **Deactivate the Slice**
-    In Terminal 3, run:
+#### Part 2: Deactivation and Resource Release
+1.  **Deactivate the `gaming` slice (Terminal 3):**
     ```bash
     ./cli.py deactivate gaming
     ```
-    *Expected Controller Log (Terminal 1):* You should see logs indicating that flow rules are removed and QoS is cleaned up.
-
-2.  **Verify Isolation is Removed**
-    In Terminal 2, repeat the ping from the isolation test:
+2.  **Verify Isolation is Removed (Terminal 2):** The previously blocked ping should now work.
     ```
     mininet> g1 ping h1
     ```
-    **Expected Result:** The ping must now succeed, as the isolation rules have been removed.
+    *Expected Outcome:* The ping must succeed. At this point, the network is back to a clean state.
 
-3.  **Verify QoS is Removed**
-    In Terminal 2, repeat the `iperf` test:
-    ```
-    mininet> gs iperf -s &
-    mininet> g1 iperf -c 10.0.0.8
-    ```
-    **Expected Result:** The bandwidth should now be the full link capacity (approx. **95-100 Mbits/sec**), as the QoS limit has been removed.
+---
+### Scenario 4: Admission Control
+**Goal:** Test that the controller rejects a new slice if there isn't enough bandwidth.
 
-### 4. Admission Control (Bandwidth Check)
-This test verifies that the controller rejects a slice if there is not enough bandwidth available on its path. The `gaming` slice (60 Mbps) and `video` slice (50 Mbps) both need to use the `s1-s4` link, which has a 100 Mbps capacity.
-
-1.  **Activate the first slice** (ensure no other slices are active). In Terminal 3:
+1.  **Activate `gaming` slice (60 Mbps) (Terminal 3):**
     ```bash
     ./cli.py activate gaming
     ```
-    This should succeed, consuming 60 Mbps on the `s1-s4` link.
-
-2.  **Verify the first slice's QoS in Mininet (Terminal 2)**. This confirms the baseline for the test.
-    ```
-    mininet> gs iperf -s &
-    mininet> g1 iperf -c 10.0.0.8
-    ```
-    *Expected Result:* Bandwidth should be ~60 Mbits/sec.
-
-3.  **Attempt to activate the conflicting slice (Terminal 3)**.
+2.  **Attempt to activate `video` slice (50 Mbps) (Terminal 3):**
     ```bash
     ./cli.py activate video
     ```
-    **Expected Result:** This command must fail. The CLI should show an error response from the controller (e.g., status 409 Conflict) with a message like `"Insufficient bandwidth on link s1-s4"`.
-
-4.  **Verify that the original slice is unaffected (Terminal 2)**. This proves that the failed activation did not disrupt existing slices.
-    ```
-    mininet> g1 iperf -c 10.0.0.8
-    ```
-    *Expected Result:* Bandwidth should still be ~60 Mbits/sec.
-
-### 5. Priority and Preemption Test
-This test verifies that a high-priority slice can preempt (i.e., automatically deactivate) lower-priority slices to free up bandwidth. We will use the `s1-s4` link.
-
-**Note:** This test requires a temporary modification to `slices.yaml`. Change the `emergency` slice flow to `{src: h1, dst: gs}` and its `capacity_pct` to `50`.
-
-1.  **Activate a low-priority slice (Terminal 3)**.
+    *Expected Outcome:* The command must fail with a `409 Conflict` error.
+3.  **Cleanup:** Deactivate the `gaming` slice to prepare for the next test.
     ```bash
-    ./cli.py activate video
+    ./cli.py deactivate gaming
     ```
-    This should succeed, consuming 50 Mbps on `s1-s4` (Priority 30).
 
-2.  **Activate a medium-priority slice (Terminal 3)**.
+---
+### Scenario 5: Priority and Preemption
+**Goal:** Demonstrate that a high-priority slice can preempt a lower-priority slice.
+
+1.  **Activate the medium-priority `gaming` slice (60 Mbps, Priority 50) (Terminal 3):**
     ```bash
     ./cli.py activate gaming
     ```
-    This should also succeed, consuming another 60 Mbps. The link `s1-s4` is now oversubscribed (110/100 used), but we proceed for the test. *Note: In a real scenario, you might want admission control to prevent this step, but for demonstrating preemption, this setup is effective.* Let's assume the controller allows it for now, or that the `gaming` slice uses a different path if possible. For this test, let's simplify and assume the goal is to show preemption. A better test sequence is:
-    
-    1.  **Activate a medium-priority slice (Terminal 3)**.
-        ```bash
-        ./cli.py activate gaming
-        ```
-        This succeeds, consuming 60 Mbps on `s1-s4` (Priority 50).
+2.  **Attempt to activate the high-priority `emergency` slice (50 Mbps, Priority 100) (Terminal 3):**
+    ```bash
+    ./cli.py activate emergency
+    ```
+3.  **Expected Outcome:**
+    -   The controller log (Terminal 1) will show a warning: `Preempting slices ['gaming'] to activate 'emergency'`.
+    -   The `emergency` slice will be activated successfully.
+    -   A ping between `g1` and `gs` (Terminal 2) will fail, as the `gaming` slice has been deactivated.
+4.  **Cleanup:** Deactivate the `emergency` slice.
+    ```bash
+    ./cli.py deactivate emergency
+    ```
 
-    2.  **Verify its QoS in Mininet (Terminal 2)**.
-        ```
-        mininet> gs iperf -s &
-        mininet> g1 iperf -c 10.0.0.8
-        ```
-        *Expected Result:* Bandwidth should be ~60 Mbits/sec.
+---
+### Scenario 6: System Status Monitoring
+**Goal:** Verify the real-time monitoring functionality.
 
-    3.  **Attempt to activate the high-priority slice (Terminal 3)**.
-        ```bash
-        ./cli.py activate emergency
-        ```
-        The `emergency` slice (Priority 100) needs 50 Mbps, but only 40 Mbps are free. The controller must preempt the lower-priority `gaming` slice.
+1.  **Activate any slice, e.g., `work` (Terminal 3):**
+    ```bash
+    ./cli.py activate work
+    ```
+2.  **Request the system status (Terminal 3):**
+    ```bash
+    ./cli.py status
+    ```
+3.  **Expected Outcome:** The command will return a JSON object detailing active slices and link usage.
+4.  **Cleanup:** Deactivate the `work` slice.
+    ```bash
+    ./cli.py deactivate work
+    ```
 
-    4.  **Expected Controller Log (Terminal 1):** You must see logs indicating that the controller is preempting the `gaming` slice before activating the `emergency` slice.
-        ```
-        WARNING:root:Preempting slices ['gaming'] to activate 'emergency'.
-        INFO:root:--- Deactivating slice 'gaming' ---
-        ...
-        INFO:root:--- Activating slice 'emergency' ---
-        ```
+---
 
-    5.  **Verify the high-priority slice is active (Terminal 2)**.
-        ```
-        mininet> gs iperf -s &
-        mininet> h1 iperf -c 10.0.0.8
-        ```
-        *Expected Result:* Bandwidth should be ~50 Mbits/sec, confirming the `emergency` slice is active and has its guaranteed QoS.
+## Cleanup
 
-    6.  **Verify the preempted slice is inactive (Terminal 2)**.
-        ```
-        mininet> g1 ping gs
-        ```
-        *Expected Result:* The ping must fail (`100% dropped`), because the `gaming` slice has been deactivated and its isolation rules are no longer overridden by specific forwarding rules.
-
-### Cleanup
-To exit, type `exit` in the Mininet CLI (Terminal 2). Then, run the cleanup command in any terminal to remove residual network configurations.
+To exit, type `exit` in the Mininet CLI (Terminal 2). Then, run the cleanup command in any terminal to remove any residual network configurations.
 ```bash
 sudo mn -c
 ```
