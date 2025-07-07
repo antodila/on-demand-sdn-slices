@@ -1,0 +1,29 @@
+// filepath: /home/comnetsemu/on-demand-sdn-slices/on-demand-sdn-slices/topology.dot
+graph on_demand_sdn_slices {
+    layout=neato;
+    node [shape=box, style=rounded];
+    
+    s1; s2; s3; s4; s5;
+
+    node [shape=ellipse, style=""];
+
+    h1; h2; h3; h4; h5;
+    g1; g2; gs; ps;
+
+    edge [penwidth=2];
+    s1 -- s2;
+    s1 -- s4;
+    s2 -- s3;
+    s2 -- s5;
+
+    edge [penwidth=1];
+    h1 -- s1;
+    h2 -- s1;
+    g1 -- s1;
+    h5 -- s2;
+    h3 -- s3;
+    h4 -- s3;
+    g2 -- s3;
+    gs -- s4;
+    ps -- s5;
+}
