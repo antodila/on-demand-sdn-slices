@@ -1,4 +1,4 @@
-# On-Demand SDN Slices with QoS and Preemption
+# On-Demand SDN Slices
 
 This project implements a dynamic network slicing system using the Ryu SDN controller and the ComNetsEmu emulator. It allows a network operator to create, activate, and deactivate isolated network "slices" on-demand via a simple command-line interface. Each slice is defined by specific traffic flows, a guaranteed bandwidth (QoS), and a priority level, enabling sophisticated traffic management.
 
