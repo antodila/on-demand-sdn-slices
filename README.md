@@ -35,6 +35,10 @@ Ensure the following are installed on your system (Ubuntu-based distribution rec
 2.  **Ryu SDN Controller**: The SDN controller framework.
 3.  **Python 3** and `pip`.
 4.  **Open vSwitch**.
+5.  **Python Virtual Environment package**:
+    ```bash
+    sudo apt install python3-venv
+    ```
 
 ### Installation
 1.  **Clone the repository** or place all project files in the same directory.
@@ -64,15 +68,28 @@ Run the controller with `sudo -E` to grant root privileges while preserving the 
 ```bash
 sudo -E ryu-manager ryu.topology.switches slicing_controller.py
 ```
+*Expected Output:* You should see logs indicating that the controller has started and the API server is running.
+```
+Controller started. Slices loaded: ['gaming', 'work', 'emergency', 'video']
+API server started on http://0.0.0.0:8080
+...
+```
 
 **Terminal 2: Start the Network Topology**
-This command starts ComNetsEmu and opens its interactive CLI (`mininet>`).
+This command starts ComNetsEmu and opens its interactive CLI.
 ```bash
 sudo -E python3 topology.py
 ```
+*Expected Output:* The topology will be built, and you will be dropped into the Mininet command-line interface.
+```
+*** Starting network
+*** ComNetEmu custom CLI is running.
+*** Type 'help' for a list of commands.
+mininet> 
+```
 
 **Terminal 3: Manage Slices via CLI**
-Use this terminal to send commands to the controller.
+Use this terminal to send commands to the controller as described in the scenarios below.
 ```bash
 ./cli.py <action> [slice_name]
 ```
@@ -105,13 +122,13 @@ Once the controller and topology are running, perform these tests in the recomme
     ```
     mininet> g1 ping gs
     ```
-    *Expected Outcome:* The ping must succeed (`0% dropped`).
+    *Expected Outcome:* The ping must succeed (`0% packet loss`).
 
 3.  **Verify Isolation (Terminal 2):** Attempt to ping a host outside the slice.
     ```
     mininet> g1 ping h1
     ```
-    *Expected Outcome:* The ping must fail (`100% dropped`).
+    *Expected Outcome:* The ping must fail (`100% packet loss`).
 
 4.  **Verify QoS (Terminal 2):** Run an `iperf` test to measure the bandwidth.
     ```
@@ -161,10 +178,14 @@ Once the controller and topology are running, perform these tests in the recomme
     ```bash
     ./cli.py activate emergency
     ```
-3.  **Expected Outcome:**
-    -   The controller log (Terminal 1) will show a warning: `Preempting slices ['gaming'] to activate 'emergency'`.
-    -   The `emergency` slice will be activated successfully.
-    -   A ping between `g1` and `gs` (Terminal 2) will fail, as the `gaming` slice has been deactivated.
+    *Expected Outcome:* The controller log (Terminal 1) will show a warning: `Preempting slices ['gaming'] to activate 'emergency'`, and the slice will be activated successfully.
+
+3.  **Verify the preempted slice is inactive (Terminal 2):**
+    ```
+    mininet> g1 ping gs
+    ```
+    *Expected Outcome:* The ping must fail (`100% packet loss`), confirming the `gaming` slice has been deactivated.
+
 4.  **Cleanup:** Deactivate the `emergency` slice.
     ```bash
     ./cli.py deactivate emergency
@@ -192,10 +213,13 @@ Once the controller and topology are running, perform these tests in the recomme
 
 ## Cleanup
 
-To exit, type `exit` in the Mininet CLI (Terminal 2). Then, run the cleanup command in any terminal to remove any residual network configurations.
+To exit the simulation, type `exit` in the Mininet CLI (Terminal 2).
+
+Then, run the cleanup command in any terminal to remove any residual network configurations.
 ```bash
 sudo mn -c
 ```
+You can now close all terminals.
 
 ## Authors
 
