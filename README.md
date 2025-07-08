@@ -18,10 +18,10 @@ The system is composed of several interconnected components:
 #### Core Logic
 -   **`slicing_controller.py`**: The brain of the operation. This Ryu application manages the network topology, exposes a REST API for slice control, and dynamically installs OpenFlow rules to enforce slice policies (forwarding, isolation, QoS, and preemption).
 -   **`topology.py`**: A ComNetsEmu script that builds the virtual network, including hosts, OpenFlow switches, and links with defined bandwidth capacities.
--   **`cli.py`**: A user-friendly command-line interface (CLI) for interacting with the controller's REST API. It simplifies the process of activating, deactivating, and monitoring slices.
+-   **`cli.py`**: A command-line interface (CLI) for interacting with the controller's REST API. It simplifies the process of activating, deactivating, and monitoring slices.
 
 #### Configuration & Dependencies
--   **`slices.yaml`**: A human-readable YAML file where all available network slices are defined. Each slice specifies its flows, required bandwidth, and priority.
+-   **`slices.yaml`**: A YAML file where all available network slices are defined. Each slice specifies its flows, required bandwidth, and priority.
 -   **`requirements.txt`**: Lists the necessary Python dependencies for the project's user-facing scripts.
 
 #### Supporting Scripts
