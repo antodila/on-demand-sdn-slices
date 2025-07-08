@@ -73,9 +73,11 @@ Ensure the following are installed on your system (Ubuntu-based distribution rec
 
 
 
-The topology includes host and switch.
+*Figure: Logical network topology showing hosts and switches.*
 
-### Host
+The network topology consists of five OpenFlow switches (`s1`–`s5`) and nine hosts, each with a unique IP address.
+
+### Host Definitions
 
 ```python
 host_defs = {
