@@ -22,7 +22,7 @@ The system is composed of several interconnected components:
 
 #### Configuration & Dependencies
 -   **`slices.yaml`**: A human-readable YAML file where all available network slices are defined. Each slice specifies its flows, required bandwidth, and priority.
--   **`requirements.txt`**: Lists the necessary Python dependencies for the project.
+-   **`requirements.txt`**: Lists the necessary Python dependencies for the project's user-facing scripts.
 
 #### Supporting Scripts
 -   **`queue_create.sh`** & **`queue_delete.sh`**: Bash scripts invoked by the controller to manage Linux Traffic Control (TC) queueing disciplines on switch interfaces, which are essential for enforcing bandwidth limits.
@@ -43,29 +43,35 @@ Ensure the following are installed on your system (Ubuntu-based distribution rec
 ### Installation
 1.  **Clone the repository** or place all project files in the same directory.
 
-2.  **Set up a Python virtual environment** (recommended):
+2.  **Install System-Wide Dependencies for Ryu**: The Ryu controller runs as root and requires some packages to be installed at the system level.
+    ```bash
+    sudo pip install networkx PyYAML
+    ```
+
+3.  **Set up a Python virtual environment** for user scripts:
     ```bash
     python3 -m venv env
     source env/bin/activate
     ```
 
-3.  **Install Python dependencies**:
+4.  **Install dependencies for the CLI**:
     ```bash
     pip install -r requirements.txt
     ```
 
-4.  **Make the QoS scripts executable**:
+5.  **Make the QoS scripts executable**:
     ```bash
     chmod +x queue_create.sh queue_delete.sh
     ```
 
 ## Execution
 
-The project requires three separate terminals. **Ensure the virtual environment is activated in each terminal** (`source env/bin/activate`).
+The project requires three separate terminals.
 
 **Terminal 1: Start the Ryu Controller**
-Run the controller with `sudo -E` to grant root privileges while preserving the Python environment.
+Run the controller with `sudo -E` to grant root privileges while preserving essential environment variables.
 ```bash
+source env/bin/activate
 sudo -E ryu-manager ryu.topology.switches slicing_controller.py
 ```
 *Expected Output:* You should see logs indicating that the controller has started and the API server is running.
@@ -78,19 +84,21 @@ API server started on http://0.0.0.0:8080
 **Terminal 2: Start the Network Topology**
 This command starts ComNetsEmu and opens its interactive CLI.
 ```bash
+source env/bin/activate
 sudo -E python3 topology.py
 ```
 *Expected Output:* The topology will be built, and you will be dropped into the Mininet command-line interface.
 ```
-*** Starting network
-*** ComNetEmu custom CLI is running.
-*** Type 'help' for a list of commands.
-mininet> 
+*** Disabling IPv6 on all hosts
+*** Running CLI (type exit to quit)
+*** Starting CLI:
+mininet>
 ```
 
 **Terminal 3: Manage Slices via CLI**
-Use this terminal to send commands to the controller as described in the scenarios below.
+Activate the virtual environment in this terminal to run the CLI script.
 ```bash
+source env/bin/activate
 ./cli.py <action> [slice_name]
 ```
 
