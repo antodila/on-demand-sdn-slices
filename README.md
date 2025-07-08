@@ -68,9 +68,37 @@ Ensure the following are installed on your system (Ubuntu-based distribution rec
     chmod +x queue_create.sh queue_delete.sh
     ```
 
-## Topology created
+## Topology
 ![Topology](topology.png)
 
+
+
+The topology includes host and switch.
+
+### Host
+
+```python
+host_defs = {
+    'h1': '10.0.0.1/24',
+    'h2': '10.0.0.2/24',
+    'h3': '10.0.0.3/24',
+    'h4': '10.0.0.4/24',
+    'h5': '10.0.0.5/24',
+    'g1': '10.0.0.6/24',
+    'g2': '10.0.0.7/24',
+    'gs': '10.0.0.8/24',
+    'ps': '10.0.0.9/24'
+}
+```
+### Switch
+
+```
+- s1
+- s2
+- s3
+- s4
+- s5
+```
 ## Execution
 
 The project requires three separate terminals.
