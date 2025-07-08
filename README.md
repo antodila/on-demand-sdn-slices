@@ -41,6 +41,10 @@ Ensure the following are installed on your system (Ubuntu-based distribution rec
     ```
 
 ### Installation
+
+> **Note on Clean Installation:** If you are reinstalling or have encountered issues, it's a good practice to start with a clean slate. You can remove the old virtual environment directory before proceeding:
+> `rm -rf env`
+
 1.  **Clone the repository** or place all project files in the same directory.
 
 2.  **Install System-Wide Dependencies for Ryu**: The Ryu controller runs as root and requires some packages to be installed at the system level.
