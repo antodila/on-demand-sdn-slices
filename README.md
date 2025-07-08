@@ -68,6 +68,9 @@ Ensure the following are installed on your system (Ubuntu-based distribution rec
     chmod +x queue_create.sh queue_delete.sh
     ```
 
+## Topology created
+![Topology](topology.png)
+
 ## Execution
 
 The project requires three separate terminals.
