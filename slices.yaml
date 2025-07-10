@@ -1,31 +1,31 @@
 # slices.yaml
-# This file defines the network slices for the SDN slicing controller.
-# Each slice specifies its flows, guaranteed bandwidth (as a percentage of link capacity), and priority.
+# defines network slices for the SDN slicing controller
+# each slice has flows, a reserved bandwidth %, and a priority level
 
-# Slice for Gaming traffic
+# Gaming slice
 gaming:
   flows:
-    - {src: g1, dst: gs}      # Flow from host g1 to host gs (path: s1 -> s4)
-  capacity_pct: 60            # Reserve 60% of the link capacity
-  priority: 50                # Medium priority
+    - {src: g1, dst: gs}      # g1 → gs (goes through s1 → s4)
+  capacity_pct: 60            # gets 60% of the link
+  priority: 50                # medium priority
 
-# Slice for Work traffic
+# Work slice
 work:
   flows:
-    - {src: h1, dst: h5}      # Flow from host h1 to host h5 (path: s1 -> s2 -> s5)
-  capacity_pct: 20            # Reserve 20% of the link capacity
-  priority: 50                # Medium priority
+    - {src: h1, dst: h5}      # h1 → h5 (goes through s1 → s2 → s5)
+  capacity_pct: 20            # gets 20% of the link
+  priority: 50                # medium priority
 
-# Slice for Emergency traffic
+# Emergency slice
 emergency:
   flows:
-    - {src: h1, dst: gs}      # Flow from host h1 to gs (path: s1 -> s4)
-  capacity_pct: 50            # Reserve 50% of the link capacity
-  priority: 100               # Highest priority
+    - {src: h1, dst: gs}      # h1 → gs (goes through s1 → s4)
+  capacity_pct: 50            # gets 50% of the link
+  priority: 100               # highest priority
 
-# Slice for Video traffic
+# Video slice
 video:
   flows:
-    - {src: h2, dst: gs}      # Flow from host h2 to gs (path: s1 -> s4)
-  capacity_pct: 50            # Reserve 50% of the link capacity
-  priority: 30                # Low priority
+    - {src: h2, dst: gs}      # h2 → gs (goes through s1 → s4)
+  capacity_pct: 50            # gets 50% of the link
+  priority: 30                # low priority

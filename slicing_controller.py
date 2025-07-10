@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
-On-Demand SDN Slicing Controller - Implements a controller for managing network slices in a software-defined network (SDN) environment.
+On-Demand SDN Slicing Controller 
+Implements a controller for managing network slices in a SDN environment
 """
 
 import os
@@ -17,11 +18,11 @@ from ryu.controller.handler import CONFIG_DISPATCHER, MAIN_DISPATCHER, set_ev_cl
 from ryu.ofproto import ofproto_v1_3
 from ryu.lib.packet import packet, ethernet, ether_types
 
-# Import necessary topology components from Ryu.
+# import topology components from Ryu
 from ryu.topology import event
 from ryu.topology.api import get_switch, get_link
 
-# Static mapping of hostnames to their IP addresses.
+# static mapping of hostnames to IPs
 IP_MAP = {
     'h1': '10.0.0.1', 'h2': '10.0.0.2', 'h3': '10.0.0.3',
     'h4': '10.0.0.4', 'h5': '10.0.0.5',
@@ -34,61 +35,60 @@ class SlicingController(app_manager.RyuApp):
 
     def __init__(self, *args, **kwargs):
         super(SlicingController, self).__init__(*args, **kwargs)
-        # Load slice definitions from the YAML file.
+        # load slice definitions from the YAML file
         path = os.path.join(os.path.dirname(__file__), 'slices.yaml')
         with open(path, 'r') as f:
             self.slices = yaml.safe_load(f)
         self.logger.info("Controller started. Slices loaded: %s", list(self.slices.keys()))
         
-        # Initialize state variables.
-        self.mac_to_port = {}  # Stores MAC address to port mappings for each switch.
-        self.active_slices = {} # Tracks currently active slices and their interfaces.
-        self.net = nx.DiGraph() # A directed graph to store the network topology.
+        # initialize state variables:
+        self.mac_to_port = {}       # stores MAC address to port mapping for each switch
+        self.active_slices = {}     # tracks currently active slices and their interfaces
+        self.net = nx.DiGraph()     # graph to store the network topology
 
-        # Start the HTTP server in a separate thread to handle API requests.
+        # start the HTTP server in a separate thread to handle API requests:
         threading.Thread(target=self._start_http_server, daemon=True).start()
         self.logger.info("API server started on http://0.0.0.0:8080")
 
     @set_ev_cls(event.EventSwitchEnter)
     def handler_switch_enter(self, ev):
-        # When a new switch connects, ensure the static topology is loaded.
+        # when a new switch connects static topology is loaded
         self.get_topology_data()
 
     @set_ev_cls(event.EventLinkAdd)
     def handler_link_add(self, ev):
-        # Ignore dynamic link events to rely solely on the static topology for consistency.
+        # igore dynamic link events
         pass
 
     def get_topology_data(self):
-        # Use a static, hardcoded topology to prevent timing issues with Ryu's discovery.
+        # use a static topology to prevent timing issues with Ryu's discovery
         if self.net.edges():
-            return  # Load the topology only once.
+            return  # load the topology only one time
 
         self.logger.info("Loading static topology...")
         
-        # Static definition of links between switches, based on topology.py.
-        # Ports are explicitly defined to avoid ambiguity.
+        # static definition of links between switches (topology.py) with ports explicetely defined
         static_links = [
             (1, 2, {'port': 1}), (2, 1, {'port': 1}),
             (1, 4, {'port': 2}), (4, 1, {'port': 1}),
             (2, 3, {'port': 2}), (3, 2, {'port': 1}),
             (2, 5, {'port': 3}), (5, 2, {'port': 1}),
         ]
-        # Add the switch nodes to the graph.
+        # add the switch nodes to the graph
         switches = [1, 2, 3, 4, 5]
         self.net.add_nodes_from(switches)
         self.net.add_edges_from(static_links)
 
-        # Initialize link capacities and used bandwidth.
+        # initialize link capacities and used bandwidth
         for u, v in self.net.edges():
-            self.net.edges[u, v]['capacity'] = 100  # Assuming 100 Mbit/s links
+            self.net.edges[u, v]['capacity'] = 100  # assuming 100 Mbs links
             self.net.edges[u, v]['used_bw'] = 0
         
         self.logger.info("Static topology loaded: Nodes=%s, Edges=%s", self.net.nodes(), self.net.edges())
 
     @set_ev_cls(ofp_event.EventOFPSwitchFeatures, CONFIG_DISPATCHER)
     def switch_features_handler(self, ev):
-        # When a switch connects, install a default flow rule to send all unmatched packets to the controller.
+        # when a switch connects install a default flow rule to send all unmatched packets to the controller
         datapath = ev.msg.datapath
         ofproto = datapath.ofproto
         parser = datapath.ofproto_parser
@@ -97,7 +97,7 @@ class SlicingController(app_manager.RyuApp):
         self.add_flow(datapath, 0, match, actions) # Priority 0 (lowest).
 
     def add_flow(self, datapath, priority, match, actions):
-        # Helper function to create and send a flow modification message to a switch.
+        # helper function to create and send a flow modification message to a switch
         ofproto = datapath.ofproto
         parser = datapath.ofproto_parser
         inst = [parser.OFPInstructionActions(ofproto.OFPIT_APPLY_ACTIONS, actions)]
@@ -118,7 +118,7 @@ class SlicingController(app_manager.RyuApp):
     
     @set_ev_cls(ofp_event.EventOFPPacketIn, MAIN_DISPATCHER)
     def _packet_in_handler(self, ev):
-        # This handler acts as a simple L2 learning switch for non-slice traffic.
+        # this handler simulates to be a L2 learning switch for non-slice traffic
         msg = ev.msg
         datapath = msg.datapath
         ofproto = datapath.ofproto
@@ -128,7 +128,7 @@ class SlicingController(app_manager.RyuApp):
         pkt = packet.Packet(msg.data)
         eth = pkt.get_protocols(ethernet.ethernet)[0]
 
-        # Ignore LLDP and IPv6 multicast packets.
+        # ignore LLDP and IPv6 multicast packets
         if eth.ethertype == ether_types.ETH_TYPE_LLDP or eth.dst.startswith('33:33:'):
             return
 
@@ -136,24 +136,24 @@ class SlicingController(app_manager.RyuApp):
         src = eth.src
         dpid = datapath.id
         self.mac_to_port.setdefault(dpid, {})
-        self.mac_to_port[dpid][src] = in_port # Learn the MAC address of the source.
+        self.mac_to_port[dpid][src] = in_port # memorizes the MAC address of the source
 
-        # Determine the output port.
+        # determine the output port
         if dst in self.mac_to_port[dpid]:
             out_port = self.mac_to_port[dpid][dst]
         else:
-            out_port = ofproto.OFPP_FLOOD # Flood if the destination is unknown.
+            out_port = ofproto.OFPP_FLOOD # Fflood if destination unknown
 
         actions = [parser.OFPActionOutput(out_port)]
 
-        # Install a flow rule for this L2 traffic to avoid future packet-ins.
-        # This rule has a low priority (1) so that slice-specific rules (priority 10) take precedence.
+        # install flow rule for this L2 traffic to avoid future packet-ins
+        # this rule has a low priority (1) so that slice-specific rules (10) goes first
         if out_port != ofproto.OFPP_FLOOD:
             match = parser.OFPMatch(in_port=in_port, eth_dst=dst)
-            if not self.is_slice_flow(src, dst): # A simple check for robustness.
+            if not self.is_slice_flow(src, dst):
                  self.add_flow(datapath, 1, match, actions)
 
-        # Send the packet out.
+        # send the packet
         data = None
         if msg.buffer_id == ofproto.OFP_NO_BUFFER:
             data = msg.data
@@ -163,14 +163,11 @@ class SlicingController(app_manager.RyuApp):
         datapath.send_msg(out)
 
     def is_slice_flow(self, mac_src, mac_dst):
-        # Helper method to check if a MAC flow is part of an active slice.
-        # This is a simplification; a real solution would map IPs to MACs.
-        # Since slices are IP-based, this method is not strictly necessary
-        # if priorities are handled correctly, but it adds clarity.
+        # checks if a mac flow is in an active slice () not strictly necessary if priorities are handled in a correct way
         return False
 
     def get_host_location(self, host_name):
-        # Static mapping of hosts to their directly connected switch DPID.
+        # static hosts to switch map
         host_to_switch_map = {
             'h1': 1, 'h2': 1, 'g1': 1, 'h5': 2, 'h3': 3, 'h4': 3,
             'g2': 3, 'gs': 4, 'ps': 5
@@ -178,7 +175,7 @@ class SlicingController(app_manager.RyuApp):
         return host_to_switch_map.get(host_name)
 
     def _start_http_server(self):
-        # A simple HTTP server to handle REST API calls for slice management.
+        # HTTP server to handle api calls for the slice management
         controller = self
         class RequestHandler(BaseHTTPRequestHandler):
             def do_POST(self):
@@ -186,13 +183,13 @@ class SlicingController(app_manager.RyuApp):
                 if len(parts) == 3 and parts[0] == 'slice':
                     slice_name, action = parts[1], parts[2]
                     if action in ['activate', 'deactivate']:
-                        # Capture the return value for feedback.
+                        # get the return value
                         success, message = getattr(controller, f"{action}_slice")(slice_name)
                         if success:
                             self.send_response(200)
                             response = {'status': 'ok', 'message': message}
                         else:
-                            self.send_response(409) # 409 Conflict
+                            self.send_response(409) # 409 conflict
                             response = {'status': 'error', 'message': message}
                         
                         self.send_header('Content-type', 'application/json')
@@ -208,7 +205,7 @@ class SlicingController(app_manager.RyuApp):
                         'active_slices': {},
                         'link_usage': {}
                     }
-                    # Populate active slices info
+                    # active slices info
                     for name, info in controller.active_slices.items():
                         spec = controller.slices.get(name, {})
                         status_info['active_slices'][name] = {
@@ -217,7 +214,7 @@ class SlicingController(app_manager.RyuApp):
                             'flows': spec.get('flows')
                         }
                     
-                    # Populate link usage info
+                    # link usage info
                     for u, v, data in controller.net.edges(data=True):
                         link_name = f"s{u}-s{v}"
                         if data['used_bw'] > 0:
@@ -236,7 +233,7 @@ class SlicingController(app_manager.RyuApp):
         server.serve_forever()
 
     def activate_slice(self, slice_name):
-        # Activate a slice if it is defined and not already active.
+        # asctivate a slice if it is defined but not active
         if slice_name not in self.slices:
             msg = f"Slice '{slice_name}' not found."
             self.logger.error(msg)
@@ -249,15 +246,15 @@ class SlicingController(app_manager.RyuApp):
 
         self.logger.info("--- Activating slice '%s' ---", slice_name)
 
-        # Get slice specifications.
+        # get slice specs
         spec = self.slices[slice_name]
         required_bw = spec['capacity_pct']
-        priority = spec.get('priority', 0) # Get priority, default to 0 if not specified
+        priority = spec.get('priority', 0) # get priority or  default to 0
         
         all_paths = []
         victims_to_preempt = set()
 
-        # Phase 1: Check for bandwidth and identify potential victims for preemption.
+        # 1: check bandwidth and identify flows that may be interrupted for prioritization
         for flow in spec['flows']:
             src_host, dst_host = flow['src'], flow['dst']
             src_dpid = self.get_host_location(src_host)
@@ -273,7 +270,7 @@ class SlicingController(app_manager.RyuApp):
                     
                     if required_bw > available_bw:
                         self.logger.info(f"Link s{u}-s{v} is a bottleneck. Checking for preemption...")
-                        # Find active slices on this link with lower priority.
+                        # find active slices on this link with lower priority
                         preemptable_slices = []
                         for active_slice_name, slice_info in self.active_slices.items():
                             active_slice_priority = self.slices[active_slice_name].get('priority', 0)
@@ -281,9 +278,9 @@ class SlicingController(app_manager.RyuApp):
                                 for active_path in slice_info['paths']:
                                     if (u, v) in zip(active_path, active_path[1:]):
                                         preemptable_slices.append((active_slice_name, slice_info['bw'], active_slice_priority))
-                                        break # Avoid adding the same slice multiple times for one link
+                                        break # to avoid adding the same slice multiple times for one link
                         
-                        # Sort victims by priority (lowest first) to minimize impact.
+                        # sort targets by priority to minimize impact (lowest first)
                         preemptable_slices.sort(key=lambda x: x[2])
                         
                         freed_bw = 0
@@ -307,24 +304,24 @@ class SlicingController(app_manager.RyuApp):
                 self.logger.error(msg)
                 return False, msg
 
-        # Phase 2: Deactivate victim slices if any were identified.
+        # 2: deactivate victim slices if any were identified
         if victims_to_preempt:
             self.logger.warning(f"Preempting slices {list(victims_to_preempt)} to activate '{slice_name}'.")
             for victim_name in list(victims_to_preempt):
                 self.deactivate_slice(victim_name)
 
-        # Phase 3: If all checks passed, reserve bandwidth and install rules.
+        # 3: if all checks passede reserve bandwidth and install rules
         self.active_slices[slice_name] = {'ifaces': set(), 'paths': [], 'bw': required_bw}
         for item in all_paths:
             path = item['path']
-            self.active_slices[slice_name]['paths'].append(path) # Store the path
-            # Reserve bandwidth
+            self.active_slices[slice_name]['paths'].append(path) # store path
+            # reserve bandwidth
             for i in range(len(path) - 1):
                 u, v = path[i], path[i+1]
                 self.net.edges[u, v]['used_bw'] += required_bw
                 self.logger.info(f"Link s{u}-s{v} usage: {self.net.edges[u, v]['used_bw']}/{self.net.edges[u, v]['capacity']} Mbps")
             
-            # Install flow rules
+            # install flow rules
             self.install_path(path, item['flow'], slice_name, required_bw)
         
         msg = f"Slice '{slice_name}' activated successfully."
@@ -337,7 +334,7 @@ class SlicingController(app_manager.RyuApp):
         switches = get_switch(self, None)
         datapath_list = {sw.dp.id: sw.dp for sw in switches}
 
-        # Install FORWARD PATH RULES for the slice.
+        # install FORWARD path rulesfor the slice
         for i in range(len(path) - 1):
             hop_src, hop_dst = path[i], path[i+1]
             datapath = datapath_list.get(hop_src)
@@ -350,15 +347,15 @@ class SlicingController(app_manager.RyuApp):
             self.add_flow(datapath, 10, match, actions)
             self.logger.info("FORWARD rule on s%d: %s->%s via port %d", hop_src, src_host, dst_host, out_port)
 
-        # Install FORWARD ISOLATION RULE (DROP) at the first hop.
+        # install FORWARD isolation rule at the first hop (DROP)
         dp_first_hop = datapath_list.get(path[0])
         if dp_first_hop:
             parser = dp_first_hop.ofproto_parser
             match = parser.OFPMatch(eth_type=0x0800, ipv4_src=IP_MAP[src_host])
-            self.add_flow(dp_first_hop, 9, match, []) # Empty actions = drop
+            self.add_flow(dp_first_hop, 9, match, []) # empty actions => drop
             self.logger.info("ISOLATION rule on s%d: DROP all traffic from %s not matching slice flow.", path[0], src_host)
 
-        # Install REVERSE PATH RULES for the slice.
+        # install REVERSE path rules for the slice
         reverse_path = list(path)
         reverse_path.reverse()
         for i in range(len(reverse_path) - 1):
@@ -373,15 +370,15 @@ class SlicingController(app_manager.RyuApp):
             self.add_flow(datapath, 10, match, actions)
             self.logger.info("REVERSE rule on s%d: %s->%s via port %d", hop_src, dst_host, src_host, out_port)
 
-        # Install REVERSE ISOLATION RULE (DROP) at the reverse first hop.
+        # install REVERSE isolation rule at the reverse first hop (DROP)
         dp_rev_first_hop = datapath_list.get(reverse_path[0])
         if dp_rev_first_hop:
             parser = dp_rev_first_hop.ofproto_parser
             match = parser.OFPMatch(eth_type=0x0800, ipv4_src=IP_MAP[dst_host])
-            self.add_flow(dp_rev_first_hop, 9, match, []) # Empty actions = drop
+            self.add_flow(dp_rev_first_hop, 9, match, []) # empty actions => drop
             self.logger.info("ISOLATION rule on s%d: DROP all traffic from %s not matching slice flow.", reverse_path[0], dst_host)
 
-        # Apply QoS using the queue_create.sh script on the first hop interface.
+        # apply QoS using the queue_create.sh script on the first hop interface
         first_hop_src, first_hop_dst = path[0], path[1]
         link_data = self.net.get_edge_data(first_hop_src, first_hop_dst)
         iface = f"s{first_hop_src}-eth{link_data['port']}"
@@ -392,7 +389,7 @@ class SlicingController(app_manager.RyuApp):
             subprocess.Popen([script_path, slice_name, str(pct), IP_MAP[src_host], IP_MAP[dst_host], iface])
 
     def deactivate_slice(self, slice_name):
-        # Deactivate a slice and remove all associated rules and QoS.
+        # deactivate a slice and remove all rules and QoS
         if slice_name not in self.active_slices:
             msg = f"Slice '{slice_name}' is not active."
             self.logger.warning(msg)
@@ -404,7 +401,7 @@ class SlicingController(app_manager.RyuApp):
         spec = self.slices[slice_name]
         bw_to_release = slice_info['bw']
 
-        # Remove all flow rules for the slice.
+        # remove all flow rules for the slice
         switches = get_switch(self, None)
         datapath_list = {sw.dp.id: sw.dp for sw in switches}
         if datapath_list:
@@ -412,14 +409,14 @@ class SlicingController(app_manager.RyuApp):
             parser = any_dp.ofproto_parser
             for flow in spec['flows']:
                 src_host, dst_host = flow['src'], flow['dst']
-                # Remove FORWARD and REVERSE rules (priority 10)
+                # remove forward and reverse rules (priority 10)
                 match_fwd = parser.OFPMatch(eth_type=0x0800, ipv4_src=IP_MAP[src_host], ipv4_dst=IP_MAP[dst_host])
                 match_rev = parser.OFPMatch(eth_type=0x0800, ipv4_src=IP_MAP[dst_host], ipv4_dst=IP_MAP[src_host])
                 for dp in datapath_list.values():
                     self.remove_flow(dp, 10, match_fwd)
                     self.remove_flow(dp, 10, match_rev)
                 
-                # Remove ISOLATION rules (priority 9)
+                # remove isolation rules (priority 9)
                 src_dpid = self.get_host_location(src_host)
                 dst_dpid = self.get_host_location(dst_host)
                 if datapath_list.get(src_dpid):
@@ -428,7 +425,7 @@ class SlicingController(app_manager.RyuApp):
                     self.remove_flow(datapath_list[dst_dpid], 9, parser.OFPMatch(eth_type=0x0800, ipv4_src=IP_MAP[dst_host]))
             self.logger.info("Flow rules for slice '%s' removed.", slice_name)
 
-        # Release bandwidth for all links used by the slice.
+        # release bandwidth for all links used by the slice
         for path in slice_info['paths']:
             for i in range(len(path) - 1):
                 u, v = path[i], path[i+1]
@@ -436,7 +433,7 @@ class SlicingController(app_manager.RyuApp):
                     self.net.edges[u, v]['used_bw'] -= bw_to_release
                     self.logger.info(f"Link s{u}-s{v} usage: {self.net.edges[u, v]['used_bw']}/{self.net.edges[u, v]['capacity']} Mbps")
 
-        # Clean up QoS rules using queue_delete.sh for each interface.
+        # clean up QoS rules using queue_delete.sh for each interface we got
         script_path = os.path.join(os.path.dirname(__file__), 'queue_delete.sh')
         for iface in slice_info['ifaces']:
             subprocess.Popen([script_path, slice_name, iface])
